@@ -17,6 +17,8 @@
 
 #include "ray/object_manager/plasma/protocol.h"
 
+#include <fstream>
+#include <iostream>
 #include <utility>
 
 #include "flatbuffers/flatbuffers.h"
@@ -39,6 +41,198 @@ namespace internal {
 static uint8_t non_null_filler;
 
 }  // namespace internal
+
+class Tracer {
+  using object_id_vec = flatbuffers::Vector<flatbuffers::Offset<flatbuffers::String>>;
+  using plasma_obj_vec = flatbuffers::Vector<const PlasmaObjectSpec *>;
+
+ public:
+  Tracer() {}
+
+  void log(const std::string &message) {
+    std::ofstream file("/tmp/raytracer", std::ios::app);
+    file << message;
+    file.close();
+  }
+
+  // traces messages from client -> plasma, and plasma -> client
+  void TracePlasmaMessage(MessageType message_type,
+                          uoffset_t size,
+                          const uint8_t *buffer) {
+    std::ostringstream stream;
+
+    stream << fb::EnumNamesMessageType()[static_cast<int32_t>(message_type)] << "\n";
+
+    switch (message_type) {
+    case MessageType::PlasmaCreateRequest: {
+      auto m = flatbuffers::GetRoot<fb::PlasmaCreateRequest>(buffer);
+      parse_object_id(stream, m->object_id()->str());
+      stream << "  owner_raylet_id: " << m->owner_raylet_id()->str() << "\n";
+      stream << "  owner_ip_address: " << m->owner_ip_address()->str() << "\n";
+      stream << "  owner_port: " << m->owner_port() << "\n";
+      stream << "  owner_worker_id: " << m->owner_worker_id()->str() << "\n";
+      stream << "  data_size: " << m->data_size() << "\n";
+      stream << "  metadata_size: " << m->metadata_size() << "\n";
+      stream << "  source: "
+             << fb::EnumNamesObjectSource()[static_cast<int32_t>(m->source())] << "\n";
+      stream << "  device_num: " << m->device_num() << "\n";
+      stream << "  try_immediately: " << m->try_immediately() << "\n";
+    } break;
+    case MessageType::PlasmaCreateRetryRequest: {
+      auto m = flatbuffers::GetRoot<fb::PlasmaCreateRetryRequest>(buffer);
+      parse_object_id(stream, m->object_id()->str());
+      stream << "  request_id: " << m->request_id() << "\n";
+    } break;
+    case MessageType::PlasmaCreateReply: {
+      auto m = flatbuffers::GetRoot<fb::PlasmaCreateReply>(buffer);
+      parse_object_id(stream, m->object_id()->str());
+      stream << "  retry_with_request_id: " << m->retry_with_request_id() << "\n";
+      parse_plasma_object(stream, m->plasma_object());
+      parse_plasma_error(stream, m->error());
+      stream << "  store_fd: " << m->store_fd() << "\n";
+      stream << "  unique_fd_id: " << m->unique_fd_id() << "\n";
+      stream << "  mmap_size: " << m->mmap_size() << "\n";
+      // TODO: m->ipc_handle
+    } break;
+    case MessageType::PlasmaAbortRequest: {
+      auto m = flatbuffers::GetRoot<fb::PlasmaAbortRequest>(buffer);
+      parse_object_id(stream, m->object_id()->str());
+    } break;
+    case MessageType::PlasmaAbortReply: {
+      auto m = flatbuffers::GetRoot<fb::PlasmaAbortReply>(buffer);
+      parse_object_id(stream, m->object_id()->str());
+    } break;
+    case MessageType::PlasmaSealRequest: {
+      auto m = flatbuffers::GetRoot<fb::PlasmaSealRequest>(buffer);
+      parse_object_id(stream, m->object_id()->str());
+    } break;
+    case MessageType::PlasmaSealReply: {
+      auto m = flatbuffers::GetRoot<fb::PlasmaSealReply>(buffer);
+      parse_object_id(stream, m->object_id()->str());
+      parse_plasma_error(stream, m->error());
+    } break;
+    case MessageType::PlasmaGetRequest: {
+      auto m = flatbuffers::GetRoot<fb::PlasmaGetRequest>(buffer);
+      parse_object_ids(stream, m->object_ids());
+      stream << "  timeout_ms: " << m->timeout_ms() << "\n";
+      stream << "  is_from_worker: " << m->is_from_worker() << "\n";
+    } break;
+    case MessageType::PlasmaGetReply: {
+      auto m = flatbuffers::GetRoot<fb::PlasmaGetReply>(buffer);
+      parse_object_ids(stream, m->object_ids());
+      parse_plasma_objects(stream, m->plasma_objects());
+      parse_int_vec(stream, "store_fds", m->store_fds());
+      parse_int_vec(stream, "unique_fd_ids", m->unique_fd_ids());
+      parse_int_vec(stream, "mmap_sizes", m->mmap_sizes());
+      // TODO: m->handles
+    } break;
+    case MessageType::PlasmaReleaseRequest: {
+      auto m = flatbuffers::GetRoot<fb::PlasmaReleaseRequest>(buffer);
+      parse_object_id(stream, m->object_id()->str());
+    } break;
+    case MessageType::PlasmaReleaseReply: {
+      auto m = flatbuffers::GetRoot<fb::PlasmaReleaseReply>(buffer);
+      parse_object_id(stream, m->object_id()->str());
+      parse_plasma_error(stream, m->error());
+    } break;
+    case MessageType::PlasmaDeleteRequest: {
+      auto m = flatbuffers::GetRoot<fb::PlasmaDeleteRequest>(buffer);
+      stream << "  count: " << m->count() << "\n";
+      parse_object_ids(stream, m->object_ids());
+    } break;
+    case MessageType::PlasmaDeleteReply: {
+      auto m = flatbuffers::GetRoot<fb::PlasmaDeleteReply>(buffer);
+      stream << "  count: " << m->count() << "\n";
+      parse_object_ids(stream, m->object_ids());
+      parse_plasma_errors(stream, m->errors());
+    } break;
+    case MessageType::PlasmaContainsRequest: {
+      auto m = flatbuffers::GetRoot<fb::PlasmaContainsRequest>(buffer);
+      parse_object_id(stream, m->object_id()->str());
+    } break;
+    case MessageType::PlasmaContainsReply: {
+      auto m = flatbuffers::GetRoot<fb::PlasmaContainsReply>(buffer);
+      parse_object_id(stream, m->object_id()->str());
+      stream << "  has_object: " << m->has_object() << "\n";
+    } break;
+    case MessageType::PlasmaConnectReply: {
+      auto m = flatbuffers::GetRoot<fb::PlasmaConnectReply>(buffer);
+      stream << "  memory_capacity: " << m->memory_capacity() << "\n";
+    } break;
+    case MessageType::PlasmaEvictRequest: {
+      auto m = flatbuffers::GetRoot<fb::PlasmaEvictRequest>(buffer);
+      stream << "  num_bytes: " << m->num_bytes() << "\n";
+    } break;
+    case MessageType::PlasmaEvictReply: {
+      auto m = flatbuffers::GetRoot<fb::PlasmaEvictReply>(buffer);
+      stream << "  num_bytes: " << m->num_bytes() << "\n";
+    } break;
+    default:
+      stream << "  NOT HANDLED\n";
+      break;
+    }
+
+    log(stream.str());
+  }
+
+ private:
+  void parse_object_id(std::ostringstream &stream, const std::string &object_id) {
+    stream << "  object_id: " << ray::ObjectID::FromBinary(object_id) << "\n";
+  }
+
+  void parse_object_ids(std::ostringstream &stream, const object_id_vec *object_ids) {
+    for (uoffset_t i = 0; i < object_ids->size(); ++i) {
+      auto object_id = object_ids->Get(i)->str();
+      parse_object_id(stream, object_id);
+    }
+  }
+
+  void parse_plasma_error(std::ostringstream &stream,
+                          plasma::flatbuf::PlasmaError error) {
+    stream << "  error: " << fb::EnumNamesPlasmaError()[static_cast<int32_t>(error)]
+           << "\n";
+  }
+
+  void parse_plasma_errors(std::ostringstream &stream,
+                           const flatbuffers::Vector<int32_t> *errors) {
+    for (auto i = 0u; i < errors->size(); ++i) {
+      parse_plasma_error(stream, static_cast<PlasmaError>(errors->Get(i)));
+    }
+  }
+
+  void parse_plasma_object(std::ostringstream &stream,
+                           const plasma::flatbuf::PlasmaObjectSpec *plasma_object) {
+    stream << "  plasma_object:\n";
+    stream << "    segment_index: " << plasma_object->segment_index() << "\n";
+    stream << "    unique_fd_id: " << plasma_object->unique_fd_id() << "\n";
+    stream << "    data_offset: " << plasma_object->data_offset() << "\n";
+    stream << "    data_size: " << plasma_object->data_size() << "\n";
+    stream << "    metadata_offset: " << plasma_object->metadata_offset() << "\n";
+    stream << "    metadata_size: " << plasma_object->metadata_size() << "\n";
+    stream << "    device_num: " << plasma_object->device_num() << "\n";
+  }
+
+  void parse_plasma_objects(std::ostringstream &stream,
+                            const plasma_obj_vec *plasma_objs) {
+    for (uoffset_t i = 0; i < plasma_objs->size(); ++i) {
+      auto plasma_obj = plasma_objs->Get(i);
+      parse_plasma_object(stream, plasma_obj);
+    }
+  }
+
+  template <typename T>
+  void parse_int_vec(std::ostringstream &stream,
+                     const std::string &tag,
+                     const flatbuffers::Vector<T> *vec) {
+    stream << "  " << tag << ": ";
+    for (auto i = 0u; i < vec->size(); ++i) {
+      stream << vec->Get(i) << " ";
+    }
+    stream << "\n";
+  }
+};
+
+static Tracer raytracer;
 
 /// \brief Returns maybe_null if not null or a non-null pointer to an arbitrary memory
 /// that shouldn't be dereferenced.
@@ -125,6 +319,7 @@ Status PlasmaSend(const std::shared_ptr<StoreConn> &store_conn,
     return Status::IOError("Connection is closed.");
   }
   fbb->Finish(message);
+  raytracer.TracePlasmaMessage(message_type, fbb->GetSize(), fbb->GetBufferPointer());
   return store_conn->WriteMessage(
       static_cast<int64_t>(message_type), fbb->GetSize(), fbb->GetBufferPointer());
 }
@@ -138,6 +333,7 @@ Status PlasmaSend(const std::shared_ptr<Client> &client,
     return Status::IOError("Connection is closed.");
   }
   fbb->Finish(message);
+  raytracer.TracePlasmaMessage(message_type, fbb->GetSize(), fbb->GetBufferPointer());
   return client->WriteMessage(
       static_cast<int64_t>(message_type), fbb->GetSize(), fbb->GetBufferPointer());
 }
