@@ -48,7 +48,8 @@ void FilterRemovedNodes(std::shared_ptr<gcs::GcsClient> gcs_client,
 }
 
 /// Update object location data based on response from the owning core worker.
-bool UpdateObjectLocations(const rpc::WorkerObjectLocationsPubMessage &location_info,
+bool UpdateObjectLocations(const ObjectID &object_id,
+                           const rpc::WorkerObjectLocationsPubMessage &location_info,
                            std::shared_ptr<gcs::GcsClient> gcs_client,
                            std::unordered_set<NodeID> *node_ids,
                            std::string *spilled_url,
@@ -57,6 +58,11 @@ bool UpdateObjectLocations(const rpc::WorkerObjectLocationsPubMessage &location_
                            size_t *object_size) {
   bool is_updated = false;
   std::unordered_set<NodeID> new_node_ids;
+
+  RAY_LOG(DEBUG) << "Begin location update for object " << object_id
+                 << "\n  primary_node_id "
+                 << NodeID::FromBinary(location_info.primary_node_id());
+
   // The size can be 0 if the update was a deletion. This assumes that an
   // object's size is always greater than 0.
   // TODO(swang): If that's not the case, we should use a flag to check
@@ -64,9 +70,13 @@ bool UpdateObjectLocations(const rpc::WorkerObjectLocationsPubMessage &location_
   if (location_info.object_size() > 0 && location_info.object_size() != *object_size) {
     *object_size = location_info.object_size();
     is_updated = true;
+    RAY_LOG(DEBUG) << "  size " << *object_size;
   }
-  for (auto const &node_id : location_info.node_ids()) {
-    new_node_ids.emplace(NodeID::FromBinary(node_id));
+  for (auto const &node_id_binary : location_info.node_ids()) {
+    const auto node_id = NodeID::FromBinary(node_id_binary);
+    new_node_ids.emplace(node_id);
+    RAY_LOG(DEBUG) << "  found on node " << node_id << " alive?"
+                   << !gcs_client->Nodes().IsRemoved(node_id);
   }
   // Filter out the removed nodes from the object locations.
   FilterRemovedNodes(gcs_client, &new_node_ids);
@@ -77,7 +87,7 @@ bool UpdateObjectLocations(const rpc::WorkerObjectLocationsPubMessage &location_
   const std::string &new_spilled_url = location_info.spilled_url();
   if (new_spilled_url != *spilled_url) {
     const auto new_spilled_node_id = NodeID::FromBinary(location_info.spilled_node_id());
-    RAY_LOG(DEBUG) << "Received object spilled to " << new_spilled_url << " spilled on "
+    RAY_LOG(DEBUG) << "  spilled at url " << new_spilled_url << " on node "
                    << new_spilled_node_id;
     if (gcs_client->Nodes().IsRemoved(new_spilled_node_id)) {
       *spilled_url = "";
@@ -90,8 +100,12 @@ bool UpdateObjectLocations(const rpc::WorkerObjectLocationsPubMessage &location_
   }
   if (location_info.pending_creation() != *pending_creation) {
     *pending_creation = location_info.pending_creation();
+    RAY_LOG(DEBUG) << "  pending_creation " << *pending_creation;
     is_updated = true;
   }
+
+  RAY_LOG(DEBUG) << "End location update for object " << object_id << " is_updated "
+                 << is_updated;
 
   return is_updated;
 }
@@ -280,13 +294,8 @@ void OwnershipBasedObjectDirectory::ObjectLocationSubscriptionCallback(
   // Once this flag is set to true, it should never go back to false.
   it->second.subscribed = true;
 
-  // Update entries for this object.
-  for (auto const &node_id_binary : location_info.node_ids()) {
-    const auto node_id = NodeID::FromBinary(node_id_binary);
-    RAY_LOG(DEBUG) << "Object " << object_id << " is on node " << node_id << " alive? "
-                   << !gcs_client_->Nodes().IsRemoved(node_id);
-  }
-  auto location_updated = UpdateObjectLocations(location_info,
+  auto location_updated = UpdateObjectLocations(object_id,
+                                                location_info,
                                                 gcs_client_,
                                                 &it->second.current_object_locations,
                                                 &it->second.spilled_url,
