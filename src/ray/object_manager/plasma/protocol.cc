@@ -67,10 +67,12 @@ class Tracer {
     case MessageType::PlasmaCreateRequest: {
       auto m = flatbuffers::GetRoot<fb::PlasmaCreateRequest>(buffer);
       parse_object_id(stream, m->object_id()->str());
-      stream << "  owner_raylet_id: " << m->owner_raylet_id()->str() << "\n";
+      stream << "  owner_raylet_id: " << NodeID::FromBinary(m->owner_raylet_id()->str())
+             << "\n";
       stream << "  owner_ip_address: " << m->owner_ip_address()->str() << "\n";
       stream << "  owner_port: " << m->owner_port() << "\n";
-      stream << "  owner_worker_id: " << m->owner_worker_id()->str() << "\n";
+      stream << "  owner_worker_id: " << WorkerID::FromBinary(m->owner_worker_id()->str())
+             << "\n";
       stream << "  data_size: " << m->data_size() << "\n";
       stream << "  metadata_size: " << m->metadata_size() << "\n";
       stream << "  source: "
@@ -87,11 +89,13 @@ class Tracer {
       auto m = flatbuffers::GetRoot<fb::PlasmaCreateReply>(buffer);
       parse_object_id(stream, m->object_id()->str());
       stream << "  retry_with_request_id: " << m->retry_with_request_id() << "\n";
-      parse_plasma_object(stream, m->plasma_object());
-      parse_plasma_error(stream, m->error());
-      stream << "  store_fd: " << m->store_fd() << "\n";
-      stream << "  unique_fd_id: " << m->unique_fd_id() << "\n";
-      stream << "  mmap_size: " << m->mmap_size() << "\n";
+      if (m->retry_with_request_id() == 0) {
+        parse_plasma_object(stream, m->plasma_object());
+        parse_plasma_error(stream, m->error());
+        stream << "  store_fd: " << m->store_fd() << "\n";
+        stream << "  unique_fd_id: " << m->unique_fd_id() << "\n";
+        stream << "  mmap_size: " << m->mmap_size() << "\n";
+      }
       // TODO: m->ipc_handle
     } break;
     case MessageType::PlasmaAbortRequest: {
