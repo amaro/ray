@@ -1248,14 +1248,9 @@ void ReferenceCounter::AddObjectLocationInternal(ReferenceTable::iterator it,
   //   // report, so there's a chance that we already knew about the node_id location.
   //   PushToLocationSubscribers(it, plasma_addr);
   // }
-  bool inserted = it->second.locations.emplace(node_id).second;
-  if (inserted) {
-    // push to subscribers if we added a new location. We eagerly add the pinned
-    // location without waiting for the object store notification to trigger a location
-    // report, so there's a chance that we already knew about the node_id location.
-    PushToLocationSubscribers(it, plasma_addr);
-  } else if (plasma_addr != 0) {
-    // also push to subscribers if plasma_addr is specified
+  it->second.locations.emplace(node_id).second;
+  if (plasma_addr != 0) {
+    // push to subscribers if plasma_addr is set.
     PushToLocationSubscribers(it, plasma_addr);
   }
 }
@@ -1470,7 +1465,7 @@ void ReferenceCounter::PushToLocationSubscribers(ReferenceTable::iterator it,
   pub_message.set_key_id(object_id.Binary());
   pub_message.set_channel_type(rpc::ChannelType::WORKER_OBJECT_LOCATIONS_CHANNEL);
   auto object_locations_msg = pub_message.mutable_worker_object_locations_message();
-  FillObjectInformationInternal(it, object_locations_msg);
+  FillObjectInformationInternal(it, object_locations_msg, plasma_addr);
 
   object_info_publisher_->Publish(pub_message);
 }
