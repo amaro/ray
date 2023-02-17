@@ -60,9 +60,12 @@ bool UpdateObjectLocations(const ObjectID &object_id,
   bool is_updated = false;
   std::unordered_set<NodeID> new_node_ids;
 
-  RAY_LOG(DEBUG) << "Begin location update for object " << object_id
-                 << "\n  primary_node_id "
-                 << NodeID::FromBinary(location_info.primary_node_id());
+  RAY_LOG(DEBUG) << "Location update for object " << object_id << " primary_node_id "
+                 << NodeID::FromBinary(location_info.primary_node_id()) << " size "
+                 << *object_size << "  spilled at url " << location_info.spilled_url()
+                 << " on node " << NodeID::FromBinary(location_info.spilled_node_id())
+                 << " pending_creation " << location_info.pending_creation()
+                 << " pinned_at_addr " << location_info.pinned_at_addr();
 
   // The size can be 0 if the update was a deletion. This assumes that an
   // object's size is always greater than 0.
@@ -71,7 +74,6 @@ bool UpdateObjectLocations(const ObjectID &object_id,
   if (location_info.object_size() > 0 && location_info.object_size() != *object_size) {
     *object_size = location_info.object_size();
     is_updated = true;
-    RAY_LOG(DEBUG) << "  size " << *object_size;
   }
   for (auto const &node_id_binary : location_info.node_ids()) {
     const auto node_id = NodeID::FromBinary(node_id_binary);
@@ -88,8 +90,6 @@ bool UpdateObjectLocations(const ObjectID &object_id,
   const std::string &new_spilled_url = location_info.spilled_url();
   if (new_spilled_url != *spilled_url) {
     const auto new_spilled_node_id = NodeID::FromBinary(location_info.spilled_node_id());
-    RAY_LOG(DEBUG) << "  spilled at url " << new_spilled_url << " on node "
-                   << new_spilled_node_id;
     if (gcs_client->Nodes().IsRemoved(new_spilled_node_id)) {
       *spilled_url = "";
       *spilled_node_id = NodeID::Nil();
@@ -101,16 +101,14 @@ bool UpdateObjectLocations(const ObjectID &object_id,
   }
   if (location_info.pending_creation() != *pending_creation) {
     *pending_creation = location_info.pending_creation();
-    RAY_LOG(DEBUG) << "  pending_creation " << *pending_creation;
     is_updated = true;
   }
   if (location_info.pinned_at_addr() > 0 &&
       location_info.pinned_at_addr() != *pinned_at_addr) {
-    RAY_LOG(DEBUG) << "  pinned_at_addr " << *pinned_at_addr;
     is_updated = true;
   }
 
-  RAY_LOG(DEBUG) << "End location update for object " << object_id << " is_updated "
+  RAY_LOG(DEBUG) << "location update for object " << object_id << " is_updated "
                  << is_updated;
 
   return is_updated;
