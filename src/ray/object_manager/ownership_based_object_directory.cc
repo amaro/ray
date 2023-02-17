@@ -55,7 +55,8 @@ bool UpdateObjectLocations(const ObjectID &object_id,
                            std::string *spilled_url,
                            NodeID *spilled_node_id,
                            bool *pending_creation,
-                           size_t *object_size) {
+                           size_t *object_size,
+                           uint64_t *pinned_at_addr) {
   bool is_updated = false;
   std::unordered_set<NodeID> new_node_ids;
 
@@ -101,6 +102,11 @@ bool UpdateObjectLocations(const ObjectID &object_id,
   if (location_info.pending_creation() != *pending_creation) {
     *pending_creation = location_info.pending_creation();
     RAY_LOG(DEBUG) << "  pending_creation " << *pending_creation;
+    is_updated = true;
+  }
+  if (location_info.pinned_at_addr() > 0 &&
+      location_info.pinned_at_addr() != *pinned_at_addr) {
+    RAY_LOG(DEBUG) << "  pinned_at_addr " << *pinned_at_addr;
     is_updated = true;
   }
 
@@ -301,7 +307,8 @@ void OwnershipBasedObjectDirectory::ObjectLocationSubscriptionCallback(
                                                 &it->second.spilled_url,
                                                 &it->second.spilled_node_id,
                                                 &it->second.pending_creation,
-                                                &it->second.object_size);
+                                                &it->second.object_size,
+                                                &it->second.pinned_at_addr);
 
   // If the lookup has failed, that means the object is lost. Trigger the callback in this
   // case to handle failure properly.

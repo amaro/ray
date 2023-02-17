@@ -48,7 +48,8 @@ class ReferenceCounterInterface {
       const int64_t object_size,
       bool is_reconstructable,
       bool add_local_ref,
-      const absl::optional<NodeID> &pinned_at_raylet_id = absl::optional<NodeID>()) = 0;
+      const absl::optional<NodeID> &pinned_at_raylet_id = absl::optional<NodeID>(),
+      uint64_t pinned_at_addr = 0) = 0;
   virtual bool SetDeleteCallback(
       const ObjectID &object_id,
       const std::function<void(const ObjectID &)> callback) = 0;
@@ -180,15 +181,16 @@ class ReferenceCounter : public ReferenceCounterInterface,
   /// corresponding ObjectRef has been returned to the language frontend.
   /// \param[in] pinned_at_raylet_id The primary location for the object, if it
   /// is already known. This is only used for ray.put calls.
-  void AddOwnedObject(const ObjectID &object_id,
-                      const std::vector<ObjectID> &contained_ids,
-                      const rpc::Address &owner_address,
-                      const std::string &call_site,
-                      const int64_t object_size,
-                      bool is_reconstructable,
-                      bool add_local_ref,
-                      const absl::optional<NodeID> &pinned_at_raylet_id =
-                          absl::optional<NodeID>()) LOCKS_EXCLUDED(mutex_);
+  void AddOwnedObject(
+      const ObjectID &object_id,
+      const std::vector<ObjectID> &contained_ids,
+      const rpc::Address &owner_address,
+      const std::string &call_site,
+      const int64_t object_size,
+      bool is_reconstructable,
+      bool add_local_ref,
+      const absl::optional<NodeID> &pinned_at_raylet_id = absl::optional<NodeID>(),
+      uint64_t pinned_at_addr = 0) LOCKS_EXCLUDED(mutex_);
 
   /// Add an owned object that was dynamically created. These are objects that
   /// were created by a task that we called, but that we own.
@@ -413,8 +415,9 @@ class ReferenceCounter : public ReferenceCounterInterface,
   /// \param[in] object_id The object to update.
   /// \param[in] node_id The new object location to be added.
   /// \return True if the reference exists, false otherwise.
-  bool AddObjectLocation(const ObjectID &object_id, const NodeID &node_id)
-      LOCKS_EXCLUDED(mutex_);
+  bool AddObjectLocation(const ObjectID &object_id,
+                         const NodeID &node_id,
+                         uint64_t pinned_at_addr) LOCKS_EXCLUDED(mutex_);
 
   /// Remove a location for the given object. The owner must have the object ref in
   /// scope.
@@ -753,7 +756,8 @@ class ReferenceCounter : public ReferenceCounterInterface,
                               const int64_t object_size,
                               bool is_reconstructable,
                               bool add_local_ref,
-                              const absl::optional<NodeID> &pinned_at_raylet_id)
+                              const absl::optional<NodeID> &pinned_at_raylet_id,
+                              uint64_t pinned_at_addr = 0)
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
   void SetNestedRefInUseRecursive(ReferenceTable::iterator inner_ref_it)
@@ -893,7 +897,9 @@ class ReferenceCounter : public ReferenceCounterInterface,
   ///
   /// \param[in] it The reference iterator for the object.
   /// \param[in] node_id The new object location to be added.
-  void AddObjectLocationInternal(ReferenceTable::iterator it, const NodeID &node_id)
+  void AddObjectLocationInternal(ReferenceTable::iterator it,
+                                 const NodeID &node_id,
+                                 uint64_t pinned_at_addr = 0)
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
   /// Remove a location for the given object. The owner must have the object ref in
@@ -910,12 +916,13 @@ class ReferenceCounter : public ReferenceCounterInterface,
   /// Publish object locations to all subscribers.
   ///
   /// \param[in] it The reference iterator for the object.
-  void PushToLocationSubscribers(ReferenceTable::iterator it)
+  void PushToLocationSubscribers(ReferenceTable::iterator it, uint64_t pinned_at_addr = 0)
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
   /// Fill up the object information for the given iterator.
   void FillObjectInformationInternal(ReferenceTable::iterator it,
-                                     rpc::WorkerObjectLocationsPubMessage *object_info)
+                                     rpc::WorkerObjectLocationsPubMessage *object_info,
+                                     uint64_t pinned_at_addr = 0)
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
   /// Clean up borrowers and references when the reference is removed from borrowers.

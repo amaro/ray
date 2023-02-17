@@ -925,6 +925,9 @@ Status CoreWorker::Put(const RayObject &object,
                        ObjectID *object_id) {
   *object_id = ObjectID::FromIndex(worker_context_.GetCurrentInternalTaskId(),
                                    worker_context_.GetNextPutIndex());
+  uint64_t plasma_addr = 0;
+  plasma_store_provider_->GetSharedMemoryAddress(*object_id, plasma_addr);
+  RAY_LOG(DEBUG) << "Put() plasma_addr " << plasma_addr;
   reference_counter_->AddOwnedObject(*object_id,
                                      contained_object_ids,
                                      rpc_address_,
@@ -932,7 +935,8 @@ Status CoreWorker::Put(const RayObject &object,
                                      object.GetSize(),
                                      /*is_reconstructable=*/false,
                                      /*add_local_ref=*/true,
-                                     NodeID::FromBinary(rpc_address_.raylet_id()));
+                                     NodeID::FromBinary(rpc_address_.raylet_id()),
+                                     plasma_addr);
   auto status = Put(object, contained_object_ids, *object_id, /*pin_object=*/true);
   if (!status.ok()) {
     RemoveLocalReference(*object_id);
@@ -2996,7 +3000,10 @@ void CoreWorker::AddObjectLocationOwner(const ObjectID &object_id,
                    << ", node_id: " << node_id;
     return;
   }
-  auto reference_exists = reference_counter_->AddObjectLocation(object_id, node_id);
+  uint64_t plasma_addr = 0;
+  plasma_store_provider_->GetSharedMemoryAddress(object_id, plasma_addr);
+  RAY_LOG(DEBUG) << "AddObjectLocationOwner() plasma_addr " << plasma_addr;
+  auto reference_exists = reference_counter_->AddObjectLocation(object_id, node_id, plasma_addr);
   if (!reference_exists) {
     RAY_LOG(DEBUG) << "Object " + object_id.Hex() + " not found";
   }

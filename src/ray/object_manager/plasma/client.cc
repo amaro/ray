@@ -157,6 +157,8 @@ class PlasmaClient::Impl : public std::enable_shared_from_this<PlasmaClient::Imp
 
   Status Evict(int64_t num_bytes, int64_t &num_bytes_evicted);
 
+  Status GetSharedMemoryAddress(const ObjectID &object_id, uint64_t &plasma_addr);
+
   Status Disconnect();
 
   std::string DebugString();
@@ -716,6 +718,24 @@ Status PlasmaClient::Impl::Evict(int64_t num_bytes, int64_t &num_bytes_evicted) 
   return ReadEvictReply(buffer.data(), buffer.size(), num_bytes_evicted);
 }
 
+Status PlasmaClient::Impl::GetSharedMemoryAddress(const ObjectID &object_id,
+                                                  uint64_t &plasma_addr) {
+  auto elem = objects_in_use_.find(object_id);
+  if (elem == objects_in_use_.end()) {
+    RAY_LOG(DEBUG) << "GetPlasmaObject() object " << object_id << " not found";
+    plasma_addr = 0;
+    return Status::ObjectNotFound("");
+  }
+  ObjectInUseEntry *object_entry = elem->second.get();
+  plasma_addr =
+      reinterpret_cast<uint64_t>(LookupMmappedFile(object_entry->object.store_fd)) +
+      object_entry->object.data_offset;
+  RAY_LOG(DEBUG) << "GetSharedMemoryAddress() object " << object_id << " has plasma_addr "
+                 << plasma_addr << " count " << object_entry->count << " is_sealed "
+                 << object_entry->is_sealed;
+  return Status::OK();
+}
+
 Status PlasmaClient::Impl::Connect(const std::string &store_socket_name,
                                    const std::string &manager_socket_name,
                                    int release_delay,
@@ -843,6 +863,11 @@ Status PlasmaClient::Delete(const std::vector<ObjectID> &object_ids) {
 
 Status PlasmaClient::Evict(int64_t num_bytes, int64_t &num_bytes_evicted) {
   return impl_->Evict(num_bytes, num_bytes_evicted);
+}
+
+Status PlasmaClient::GetSharedMemoryAddress(const ObjectID &object_id,
+                                            uint64_t &plasma_addr) {
+  return impl_->GetSharedMemoryAddress(object_id, plasma_addr);
 }
 
 Status PlasmaClient::Disconnect() { return impl_->Disconnect(); }

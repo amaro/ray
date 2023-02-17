@@ -197,7 +197,8 @@ void ReferenceCounter::AddOwnedObject(const ObjectID &object_id,
                                       const int64_t object_size,
                                       bool is_reconstructable,
                                       bool add_local_ref,
-                                      const absl::optional<NodeID> &pinned_at_raylet_id) {
+                                      const absl::optional<NodeID> &pinned_at_raylet_id,
+                                      uint64_t pinned_at_addr) {
   absl::MutexLock lock(&mutex_);
   RAY_CHECK(AddOwnedObjectInternal(object_id,
                                    inner_ids,
@@ -206,7 +207,8 @@ void ReferenceCounter::AddOwnedObject(const ObjectID &object_id,
                                    object_size,
                                    is_reconstructable,
                                    add_local_ref,
-                                   pinned_at_raylet_id))
+                                   pinned_at_raylet_id,
+                                   pinned_at_addr))
       << "Tried to create an owned object that already exists: " << object_id;
 }
 
@@ -247,7 +249,8 @@ bool ReferenceCounter::AddOwnedObjectInternal(
     const int64_t object_size,
     bool is_reconstructable,
     bool add_local_ref,
-    const absl::optional<NodeID> &pinned_at_raylet_id) {
+    const absl::optional<NodeID> &pinned_at_raylet_id,
+    uint64_t pinned_at_addr) {
   if (object_id_refs_.count(object_id) != 0) {
     return false;
   }
@@ -272,7 +275,7 @@ bool ReferenceCounter::AddOwnedObjectInternal(
   }
   if (pinned_at_raylet_id.has_value()) {
     // We eagerly add the pinned location to the set of object locations.
-    AddObjectLocationInternal(it, pinned_at_raylet_id.value());
+    AddObjectLocationInternal(it, pinned_at_raylet_id.value(), pinned_at_addr);
   }
 
   reconstructable_owned_objects_.emplace_back(object_id);
@@ -1220,7 +1223,8 @@ void ReferenceCounter::SetReleaseLineageCallback(
 }
 
 bool ReferenceCounter::AddObjectLocation(const ObjectID &object_id,
-                                         const NodeID &node_id) {
+                                         const NodeID &node_id,
+                                         uint64_t plasma_addr) {
   absl::MutexLock lock(&mutex_);
   auto it = object_id_refs_.find(object_id);
   if (it == object_id_refs_.end()) {
@@ -1229,18 +1233,30 @@ bool ReferenceCounter::AddObjectLocation(const ObjectID &object_id,
                       "object is already evicted.";
     return false;
   }
-  AddObjectLocationInternal(it, node_id);
+  AddObjectLocationInternal(it, node_id, plasma_addr);
   return true;
 }
 
 void ReferenceCounter::AddObjectLocationInternal(ReferenceTable::iterator it,
-                                                 const NodeID &node_id) {
+                                                 const NodeID &node_id,
+                                                 uint64_t plasma_addr) {
   RAY_LOG(DEBUG) << "Adding location " << node_id << " for object " << it->first;
-  if (it->second.locations.emplace(node_id).second) {
-    // Only push to subscribers if we added a new location. We eagerly add the pinned
+  // original code:
+  // if (it->second.locations.emplace(node_id).second) {
+  //   // Only push to subscribers if we added a new location. We eagerly add the pinned
+  //   // location without waiting for the object store notification to trigger a location
+  //   // report, so there's a chance that we already knew about the node_id location.
+  //   PushToLocationSubscribers(it, plasma_addr);
+  // }
+  bool inserted = it->second.locations.emplace(node_id).second;
+  if (inserted) {
+    // push to subscribers if we added a new location. We eagerly add the pinned
     // location without waiting for the object store notification to trigger a location
     // report, so there's a chance that we already knew about the node_id location.
-    PushToLocationSubscribers(it);
+    PushToLocationSubscribers(it, plasma_addr);
+  } else if (plasma_addr != 0) {
+    // also push to subscribers if plasma_addr is specified
+    PushToLocationSubscribers(it, plasma_addr);
   }
 }
 
@@ -1435,7 +1451,8 @@ bool ReferenceCounter::IsObjectPendingCreation(const ObjectID &object_id) const 
   return it->second.pending_creation;
 }
 
-void ReferenceCounter::PushToLocationSubscribers(ReferenceTable::iterator it) {
+void ReferenceCounter::PushToLocationSubscribers(ReferenceTable::iterator it,
+                                                 uint64_t plasma_addr) {
   const auto &object_id = it->first;
   const auto &locations = it->second.locations;
   auto object_size = it->second.object_size;
@@ -1448,7 +1465,7 @@ void ReferenceCounter::PushToLocationSubscribers(ReferenceTable::iterator it) {
                  << "], spilled node ID: " << spilled_node_id
                  << ", and object size: " << object_size
                  << ", and primary node ID: " << primary_node_id << ", pending creation? "
-                 << it->second.pending_creation;
+                 << it->second.pending_creation << " plasma_addr " << plasma_addr;
   rpc::PubMessage pub_message;
   pub_message.set_key_id(object_id.Binary());
   pub_message.set_channel_type(rpc::ChannelType::WORKER_OBJECT_LOCATIONS_CHANNEL);
@@ -1475,7 +1492,9 @@ Status ReferenceCounter::FillObjectInformation(
 }
 
 void ReferenceCounter::FillObjectInformationInternal(
-    ReferenceTable::iterator it, rpc::WorkerObjectLocationsPubMessage *object_info) {
+    ReferenceTable::iterator it,
+    rpc::WorkerObjectLocationsPubMessage *object_info,
+    uint64_t pinned_at_addr) {
   for (const auto &node_id : it->second.locations) {
     object_info->add_node_ids(node_id.Binary());
   }
@@ -1485,6 +1504,7 @@ void ReferenceCounter::FillObjectInformationInternal(
   auto primary_node_id = it->second.pinned_at_raylet_id.value_or(NodeID::Nil());
   object_info->set_primary_node_id(primary_node_id.Binary());
   object_info->set_pending_creation(it->second.pending_creation);
+  object_info->set_pinned_at_addr(pinned_at_addr);
 }
 
 void ReferenceCounter::PublishObjectLocationSnapshot(const ObjectID &object_id) {

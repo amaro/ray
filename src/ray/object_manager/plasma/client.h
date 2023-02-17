@@ -320,6 +320,8 @@ class PlasmaClient : public PlasmaClientInterface {
   /// \return The return status.
   Status Evict(int64_t num_bytes, int64_t &num_bytes_evicted);
 
+  Status GetSharedMemoryAddress(const ObjectID &object_id, uint64_t &result);
+
   /// Disconnect from the local plasma instance, including the local store and
   /// manager.
   ///

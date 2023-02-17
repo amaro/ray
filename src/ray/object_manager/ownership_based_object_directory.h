@@ -113,6 +113,7 @@ class OwnershipBasedObjectDirectory : public IObjectDirectory {
     bool subscribed;
     /// The address of the owner.
     rpc::Address owner_address;
+    uint64_t pinned_at_addr = 0;
   };
 
   /// Reference to the event loop.

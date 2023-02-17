@@ -429,6 +429,11 @@ Status CoreWorkerPlasmaStoreProvider::Delete(
   return raylet_client_->FreeObjects(object_id_vector, local_only);
 }
 
+Status CoreWorkerPlasmaStoreProvider::GetSharedMemoryAddress(const ObjectID &object_id,
+                                                             uint64_t &plasma_addr) {
+  return store_client_.GetSharedMemoryAddress(object_id, plasma_addr);
+}
+
 std::string CoreWorkerPlasmaStoreProvider::MemoryUsageString() {
   return store_client_.DebugString();
 }
