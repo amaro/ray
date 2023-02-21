@@ -566,10 +566,12 @@ class ReferenceCounter : public ReferenceCounterInterface,
               std::string call_site,
               const int64_t object_size,
               bool is_reconstructable,
+              uint64_t pinned_at_addr,
               const absl::optional<NodeID> &pinned_at_raylet_id)
         : call_site(call_site),
           object_size(object_size),
           owner_address(owner_address),
+          pinned_at_addr(pinned_at_addr),
           pinned_at_raylet_id(pinned_at_raylet_id),
           owned_by_us(true),
           is_reconstructable(is_reconstructable),
@@ -678,6 +680,8 @@ class ReferenceCounter : public ReferenceCounterInterface,
     /// process is a borrower, the borrower must add the owner's address before
     /// using the ObjectID.
     absl::optional<rpc::Address> owner_address;
+
+    uint64_t pinned_at_addr = 0;
     /// If this object is owned by us and stored in plasma, and reference
     /// counting is enabled, then some raylet must be pinning the object value.
     /// This is the address of that raylet.
@@ -899,7 +903,7 @@ class ReferenceCounter : public ReferenceCounterInterface,
   /// \param[in] node_id The new object location to be added.
   void AddObjectLocationInternal(ReferenceTable::iterator it,
                                  const NodeID &node_id,
-                                 uint64_t pinned_at_addr = 0)
+                                 uint64_t pinned_at_addr)
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
   /// Remove a location for the given object. The owner must have the object ref in
@@ -916,13 +920,12 @@ class ReferenceCounter : public ReferenceCounterInterface,
   /// Publish object locations to all subscribers.
   ///
   /// \param[in] it The reference iterator for the object.
-  void PushToLocationSubscribers(ReferenceTable::iterator it, uint64_t pinned_at_addr = 0)
+  void PushToLocationSubscribers(ReferenceTable::iterator it)
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
   /// Fill up the object information for the given iterator.
   void FillObjectInformationInternal(ReferenceTable::iterator it,
-                                     rpc::WorkerObjectLocationsPubMessage *object_info,
-                                     uint64_t pinned_at_addr = 0)
+                                     rpc::WorkerObjectLocationsPubMessage *object_info)
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
   /// Clean up borrowers and references when the reference is removed from borrowers.

@@ -722,7 +722,7 @@ Status PlasmaClient::Impl::GetSharedMemoryAddress(const ObjectID &object_id,
                                                   uint64_t &plasma_addr) {
   auto elem = objects_in_use_.find(object_id);
   if (elem == objects_in_use_.end()) {
-    RAY_LOG(DEBUG) << "GetPlasmaObject() object " << object_id << " not found";
+    RAY_LOG(DEBUG) << "GetSharedMemoryAddress() object " << object_id << " not found";
     plasma_addr = 0;
     return Status::ObjectNotFound("");
   }

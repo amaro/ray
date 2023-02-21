@@ -103,8 +103,8 @@ bool UpdateObjectLocations(const ObjectID &object_id,
     *pending_creation = location_info.pending_creation();
     is_updated = true;
   }
-  if (location_info.pinned_at_addr() > 0 &&
-      location_info.pinned_at_addr() != *pinned_at_addr) {
+  if (location_info.pinned_at_addr() != *pinned_at_addr) {
+    *pinned_at_addr = location_info.pinned_at_addr();
     is_updated = true;
   }
 

@@ -266,6 +266,7 @@ bool ReferenceCounter::AddOwnedObjectInternal(
                                    call_site,
                                    object_size,
                                    is_reconstructable,
+                                   pinned_at_addr,
                                    pinned_at_raylet_id))
                 .first;
   if (!inner_ids.empty()) {
@@ -294,6 +295,7 @@ void ReferenceCounter::UpdateObjectSize(const ObjectID &object_id, int64_t objec
   auto it = object_id_refs_.find(object_id);
   if (it != object_id_refs_.end()) {
     it->second.object_size = object_size;
+    RAY_LOG(DEBUG) << "UpdateObjectSize() before PushToLocationSubscribers()";
     PushToLocationSubscribers(it);
   }
 }
@@ -1224,7 +1226,7 @@ void ReferenceCounter::SetReleaseLineageCallback(
 
 bool ReferenceCounter::AddObjectLocation(const ObjectID &object_id,
                                          const NodeID &node_id,
-                                         uint64_t plasma_addr) {
+                                         uint64_t pinned_at_addr) {
   absl::MutexLock lock(&mutex_);
   auto it = object_id_refs_.find(object_id);
   if (it == object_id_refs_.end()) {
@@ -1233,25 +1235,21 @@ bool ReferenceCounter::AddObjectLocation(const ObjectID &object_id,
                       "object is already evicted.";
     return false;
   }
-  AddObjectLocationInternal(it, node_id, plasma_addr);
+  AddObjectLocationInternal(it, node_id, pinned_at_addr);
   return true;
 }
 
 void ReferenceCounter::AddObjectLocationInternal(ReferenceTable::iterator it,
                                                  const NodeID &node_id,
-                                                 uint64_t plasma_addr) {
-  RAY_LOG(DEBUG) << "Adding location " << node_id << " for object " << it->first;
-  // original code:
-  // if (it->second.locations.emplace(node_id).second) {
-  //   // Only push to subscribers if we added a new location. We eagerly add the pinned
-  //   // location without waiting for the object store notification to trigger a location
-  //   // report, so there's a chance that we already knew about the node_id location.
-  //   PushToLocationSubscribers(it, plasma_addr);
-  // }
-  it->second.locations.emplace(node_id).second;
-  if (plasma_addr != 0) {
-    // push to subscribers if plasma_addr is set.
-    PushToLocationSubscribers(it, plasma_addr);
+                                                 uint64_t pinned_at_addr) {
+  RAY_LOG(DEBUG) << "Adding location " << node_id << " for object "
+                 << it->first << " pinned_at_addr " << pinned_at_addr;
+  it->second.pinned_at_addr = pinned_at_addr;
+  if (it->second.locations.emplace(node_id).second) {
+    // Only push to subscribers if we added a new location. We eagerly add the pinned
+    // location without waiting for the object store notification to trigger a location
+    // report, so there's a chance that we already knew about the node_id location.
+    PushToLocationSubscribers(it);
   }
 }
 
@@ -1273,6 +1271,7 @@ bool ReferenceCounter::RemoveObjectLocation(const ObjectID &object_id,
 void ReferenceCounter::RemoveObjectLocationInternal(ReferenceTable::iterator it,
                                                     const NodeID &node_id) {
   it->second.locations.erase(node_id);
+  RAY_LOG(DEBUG) << "RemoveObjectLocationInternal() before PushToLocationSubscribers()";
   PushToLocationSubscribers(it);
 }
 
@@ -1285,6 +1284,7 @@ void ReferenceCounter::UpdateObjectPendingCreation(const ObjectID &object_id,
     it->second.pending_creation = pending_creation;
   }
   if (push) {
+    RAY_LOG(DEBUG) << "UpdateObjectPendingCreation() before PushToLocationSubscribers()";
     PushToLocationSubscribers(it);
   }
 }
@@ -1328,6 +1328,7 @@ bool ReferenceCounter::HandleObjectSpilled(const ObjectID &object_id,
     if (!spilled_node_id.IsNil()) {
       it->second.spilled_node_id = spilled_node_id;
     }
+    RAY_LOG(DEBUG) << "HandleObjectSpilled() before PushToLocationSubscribers()";
     PushToLocationSubscribers(it);
   } else {
     RAY_LOG(DEBUG) << "Object " << object_id << " spilled to dead node "
@@ -1446,8 +1447,7 @@ bool ReferenceCounter::IsObjectPendingCreation(const ObjectID &object_id) const 
   return it->second.pending_creation;
 }
 
-void ReferenceCounter::PushToLocationSubscribers(ReferenceTable::iterator it,
-                                                 uint64_t plasma_addr) {
+void ReferenceCounter::PushToLocationSubscribers(ReferenceTable::iterator it) {
   const auto &object_id = it->first;
   const auto &locations = it->second.locations;
   auto object_size = it->second.object_size;
@@ -1460,12 +1460,13 @@ void ReferenceCounter::PushToLocationSubscribers(ReferenceTable::iterator it,
                  << "], spilled node ID: " << spilled_node_id
                  << ", and object size: " << object_size
                  << ", and primary node ID: " << primary_node_id << ", pending creation? "
-                 << it->second.pending_creation << " plasma_addr " << plasma_addr;
+                 << it->second.pending_creation << ", pinned_at_addr "
+                 << it->second.pinned_at_addr;
   rpc::PubMessage pub_message;
   pub_message.set_key_id(object_id.Binary());
   pub_message.set_channel_type(rpc::ChannelType::WORKER_OBJECT_LOCATIONS_CHANNEL);
   auto object_locations_msg = pub_message.mutable_worker_object_locations_message();
-  FillObjectInformationInternal(it, object_locations_msg, plasma_addr);
+  FillObjectInformationInternal(it, object_locations_msg);
 
   object_info_publisher_->Publish(pub_message);
 }
@@ -1487,9 +1488,7 @@ Status ReferenceCounter::FillObjectInformation(
 }
 
 void ReferenceCounter::FillObjectInformationInternal(
-    ReferenceTable::iterator it,
-    rpc::WorkerObjectLocationsPubMessage *object_info,
-    uint64_t pinned_at_addr) {
+    ReferenceTable::iterator it, rpc::WorkerObjectLocationsPubMessage *object_info) {
   for (const auto &node_id : it->second.locations) {
     object_info->add_node_ids(node_id.Binary());
   }
@@ -1499,7 +1498,7 @@ void ReferenceCounter::FillObjectInformationInternal(
   auto primary_node_id = it->second.pinned_at_raylet_id.value_or(NodeID::Nil());
   object_info->set_primary_node_id(primary_node_id.Binary());
   object_info->set_pending_creation(it->second.pending_creation);
-  object_info->set_pinned_at_addr(pinned_at_addr);
+  object_info->set_pinned_at_addr(it->second.pinned_at_addr);
 }
 
 void ReferenceCounter::PublishObjectLocationSnapshot(const ObjectID &object_id) {
@@ -1524,6 +1523,7 @@ void ReferenceCounter::PublishObjectLocationSnapshot(const ObjectID &object_id) 
   // Always publish the location when subscribed for the first time.
   // This will ensure that the subscriber will get the first snapshot of the
   // object location.
+  RAY_LOG(DEBUG) << "PublishObjectLocationSnapshot() before PushToLocationSubscribers()";
   PushToLocationSubscribers(it);
 }
 
