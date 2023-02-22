@@ -925,9 +925,6 @@ Status CoreWorker::Put(const RayObject &object,
                        ObjectID *object_id) {
   *object_id = ObjectID::FromIndex(worker_context_.GetCurrentInternalTaskId(),
                                    worker_context_.GetNextPutIndex());
-  uint64_t pinned_at_addr = 0;
-  plasma_store_provider_->GetSharedMemoryAddress(*object_id, pinned_at_addr);
-  RAY_LOG(DEBUG) << "Put() pinned_at_addr " << pinned_at_addr;
   reference_counter_->AddOwnedObject(*object_id,
                                      contained_object_ids,
                                      rpc_address_,
@@ -935,8 +932,7 @@ Status CoreWorker::Put(const RayObject &object,
                                      object.GetSize(),
                                      /*is_reconstructable=*/false,
                                      /*add_local_ref=*/true,
-                                     NodeID::FromBinary(rpc_address_.raylet_id()),
-                                     pinned_at_addr);
+                                     NodeID::FromBinary(rpc_address_.raylet_id()));
   auto status = Put(object, contained_object_ids, *object_id, /*pin_object=*/true);
   if (!status.ok()) {
     RemoveLocalReference(*object_id);
@@ -1006,12 +1002,6 @@ Status CoreWorker::CreateOwnedAndIncrementLocalRef(
       owner_address != nullptr ? *owner_address : rpc_address_;
   bool owned_by_us = real_owner_address.worker_id() == rpc_address_.worker_id();
   if (owned_by_us) {
-    uint64_t pinned_at_addr = 0;
-    if (!inline_small_object) {
-      plasma_store_provider_->GetSharedMemoryAddress(*object_id, pinned_at_addr);
-      RAY_LOG(DEBUG) << "CreateOwnedAndIncrementLocalRef() pinned_at_addr "
-                     << pinned_at_addr;
-    }
     reference_counter_->AddOwnedObject(*object_id,
                                        contained_object_ids,
                                        rpc_address_,
@@ -1019,8 +1009,7 @@ Status CoreWorker::CreateOwnedAndIncrementLocalRef(
                                        data_size + metadata->Size(),
                                        /*is_reconstructable=*/false,
                                        /*add_local_ref=*/true,
-                                       NodeID::FromBinary(rpc_address_.raylet_id()),
-                                       pinned_at_addr);
+                                       NodeID::FromBinary(rpc_address_.raylet_id()));
   } else {
     // Because in the remote worker's `HandleAssignObjectOwner`,
     // a `WaitForRefRemoved` RPC request will be sent back to

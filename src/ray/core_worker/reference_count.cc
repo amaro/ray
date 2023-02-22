@@ -197,8 +197,7 @@ void ReferenceCounter::AddOwnedObject(const ObjectID &object_id,
                                       const int64_t object_size,
                                       bool is_reconstructable,
                                       bool add_local_ref,
-                                      const absl::optional<NodeID> &pinned_at_raylet_id,
-                                      uint64_t pinned_at_addr) {
+                                      const absl::optional<NodeID> &pinned_at_raylet_id) {
   absl::MutexLock lock(&mutex_);
   RAY_CHECK(AddOwnedObjectInternal(object_id,
                                    inner_ids,
@@ -207,8 +206,7 @@ void ReferenceCounter::AddOwnedObject(const ObjectID &object_id,
                                    object_size,
                                    is_reconstructable,
                                    add_local_ref,
-                                   pinned_at_raylet_id,
-                                   pinned_at_addr))
+                                   pinned_at_raylet_id))
       << "Tried to create an owned object that already exists: " << object_id;
 }
 
@@ -249,8 +247,7 @@ bool ReferenceCounter::AddOwnedObjectInternal(
     const int64_t object_size,
     bool is_reconstructable,
     bool add_local_ref,
-    const absl::optional<NodeID> &pinned_at_raylet_id,
-    uint64_t pinned_at_addr) {
+    const absl::optional<NodeID> &pinned_at_raylet_id) {
   if (object_id_refs_.count(object_id) != 0) {
     return false;
   }
@@ -266,7 +263,6 @@ bool ReferenceCounter::AddOwnedObjectInternal(
                                    call_site,
                                    object_size,
                                    is_reconstructable,
-                                   pinned_at_addr,
                                    pinned_at_raylet_id))
                 .first;
   if (!inner_ids.empty()) {
@@ -276,7 +272,7 @@ bool ReferenceCounter::AddOwnedObjectInternal(
   }
   if (pinned_at_raylet_id.has_value()) {
     // We eagerly add the pinned location to the set of object locations.
-    AddObjectLocationInternal(it, pinned_at_raylet_id.value(), pinned_at_addr);
+    AddObjectLocationInternal(it, pinned_at_raylet_id.value());
   }
 
   reconstructable_owned_objects_.emplace_back(object_id);
@@ -295,7 +291,6 @@ void ReferenceCounter::UpdateObjectSize(const ObjectID &object_id, int64_t objec
   auto it = object_id_refs_.find(object_id);
   if (it != object_id_refs_.end()) {
     it->second.object_size = object_size;
-    RAY_LOG(DEBUG) << "UpdateObjectSize() before PushToLocationSubscribers()";
     PushToLocationSubscribers(it);
   }
 }
@@ -1242,9 +1237,15 @@ bool ReferenceCounter::AddObjectLocation(const ObjectID &object_id,
 void ReferenceCounter::AddObjectLocationInternal(ReferenceTable::iterator it,
                                                  const NodeID &node_id,
                                                  uint64_t pinned_at_addr) {
-  RAY_LOG(DEBUG) << "Adding location " << node_id << " for object "
-                 << it->first << " pinned_at_addr " << pinned_at_addr;
-  it->second.pinned_at_addr = pinned_at_addr;
+  RAY_LOG(DEBUG) << "Adding location " << node_id << " for object " << it->first
+                 << " pinned_at_addr " << pinned_at_addr;
+  if (pinned_at_addr != 0) {
+    if (it->second.pinned_at_addr != 0) {
+      RAY_LOG(DEBUG) << "Will replace existing reference pin_at_addr value "
+                     << it->second.pinned_at_addr;
+    }
+    it->second.pinned_at_addr = pinned_at_addr;
+  }
   if (it->second.locations.emplace(node_id).second) {
     // Only push to subscribers if we added a new location. We eagerly add the pinned
     // location without waiting for the object store notification to trigger a location
@@ -1271,7 +1272,6 @@ bool ReferenceCounter::RemoveObjectLocation(const ObjectID &object_id,
 void ReferenceCounter::RemoveObjectLocationInternal(ReferenceTable::iterator it,
                                                     const NodeID &node_id) {
   it->second.locations.erase(node_id);
-  RAY_LOG(DEBUG) << "RemoveObjectLocationInternal() before PushToLocationSubscribers()";
   PushToLocationSubscribers(it);
 }
 
@@ -1284,7 +1284,6 @@ void ReferenceCounter::UpdateObjectPendingCreation(const ObjectID &object_id,
     it->second.pending_creation = pending_creation;
   }
   if (push) {
-    RAY_LOG(DEBUG) << "UpdateObjectPendingCreation() before PushToLocationSubscribers()";
     PushToLocationSubscribers(it);
   }
 }
@@ -1328,7 +1327,6 @@ bool ReferenceCounter::HandleObjectSpilled(const ObjectID &object_id,
     if (!spilled_node_id.IsNil()) {
       it->second.spilled_node_id = spilled_node_id;
     }
-    RAY_LOG(DEBUG) << "HandleObjectSpilled() before PushToLocationSubscribers()";
     PushToLocationSubscribers(it);
   } else {
     RAY_LOG(DEBUG) << "Object " << object_id << " spilled to dead node "
@@ -1523,7 +1521,6 @@ void ReferenceCounter::PublishObjectLocationSnapshot(const ObjectID &object_id) 
   // Always publish the location when subscribed for the first time.
   // This will ensure that the subscriber will get the first snapshot of the
   // object location.
-  RAY_LOG(DEBUG) << "PublishObjectLocationSnapshot() before PushToLocationSubscribers()";
   PushToLocationSubscribers(it);
 }
 
