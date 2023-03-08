@@ -29,3 +29,25 @@ versions.check(minimum_bazel_version = "4.2.1")
 load("@hedron_compile_commands//:workspace_setup.bzl", "hedron_compile_commands_setup")
 
 hedron_compile_commands_setup()
+
+new_local_repository(
+    name = "system_libs",
+    path = "/lib/x86_64-linux-gnu",
+    build_file_content = """
+cc_library(
+    name = "mlx5",
+    srcs = ["libmlx5.so"],
+    visibility = ["//visibility:public"],
+)
+cc_library(
+    name = "rdmacm",
+    srcs = ["librdmacm.so"],
+    visibility = ["//visibility:public"],
+)
+cc_library(
+    name = "ibverbs",
+    srcs = ["libibverbs.so"],
+    visibility = ["//visibility:public"],
+)
+""",
+)

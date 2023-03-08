@@ -294,6 +294,26 @@ PLASMA_LINKOPTS = [] + select({
 })
 
 cc_library(
+    name = "plasma_rdma_datapath",
+    srcs = [
+        "src/ray/object_manager/plasma/rdma/rdmapeer.cc",
+        "src/ray/object_manager/plasma/rdma/plasmaendpoint.cc"
+    ],
+    hdrs = [
+        "src/ray/object_manager/plasma/rdma/rdmapeer.h",
+        "src/ray/object_manager/plasma/rdma/plasmaendpoint.h",
+        "src/ray/object_manager/plasma/rdma/rpc.h"
+    ],
+    copts = COPTS,
+    deps = [
+        "@system_libs//:mlx5",
+        "@system_libs//:rdmacm",
+        "@system_libs//:ibverbs",
+        ":ray_util"
+    ]
+)
+
+cc_library(
     name = "plasma_client",
     srcs = [
         "src/ray/object_manager/plasma/client.cc",
@@ -375,6 +395,7 @@ cc_library(
     linkopts = PLASMA_LINKOPTS,
     strip_include_prefix = "src",
     deps = [
+        ":plasma_rdma_datapath",
         ":plasma_client",
         ":stats_lib",
     ],
