@@ -430,8 +430,8 @@ Status CoreWorkerPlasmaStoreProvider::Delete(
 }
 
 Status CoreWorkerPlasmaStoreProvider::GetSharedMemoryAddress(const ObjectID &object_id,
-                                                             uint64_t &plasma_addr) {
-  return store_client_.GetSharedMemoryAddress(object_id, plasma_addr);
+                                                             int64_t &pinned_at_off) {
+  return store_client_.GetSharedMemoryAddress(object_id, pinned_at_off);
 }
 
 std::string CoreWorkerPlasmaStoreProvider::MemoryUsageString() {

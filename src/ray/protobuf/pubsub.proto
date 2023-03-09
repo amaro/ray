@@ -115,7 +115,8 @@ message WorkerObjectLocationsPubMessage {
   // there are no locations and this is set, the subscriber should wait for the
   // new location to appear.
   bool pending_creation = 8;
-  uint64 pinned_at_addr = 9;
+  // The offset in shared memory at which this object pinned
+  int64 pinned_at_off = 9;
 }
 
 /// Indicating the subscriber needs to handle failure callback.

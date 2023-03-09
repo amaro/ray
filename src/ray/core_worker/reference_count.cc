@@ -1221,7 +1221,7 @@ void ReferenceCounter::SetReleaseLineageCallback(
 
 bool ReferenceCounter::AddObjectLocation(const ObjectID &object_id,
                                          const NodeID &node_id,
-                                         uint64_t pinned_at_addr) {
+                                         int64_t pinned_at_off) {
   absl::MutexLock lock(&mutex_);
   auto it = object_id_refs_.find(object_id);
   if (it == object_id_refs_.end()) {
@@ -1230,21 +1230,21 @@ bool ReferenceCounter::AddObjectLocation(const ObjectID &object_id,
                       "object is already evicted.";
     return false;
   }
-  AddObjectLocationInternal(it, node_id, pinned_at_addr);
+  AddObjectLocationInternal(it, node_id, pinned_at_off);
   return true;
 }
 
 void ReferenceCounter::AddObjectLocationInternal(ReferenceTable::iterator it,
                                                  const NodeID &node_id,
-                                                 uint64_t pinned_at_addr) {
+                                                 int64_t pinned_at_off) {
   RAY_LOG(DEBUG) << "Adding location " << node_id << " for object " << it->first
-                 << " pinned_at_addr " << pinned_at_addr;
-  if (pinned_at_addr != 0) {
-    if (it->second.pinned_at_addr != 0) {
-      RAY_LOG(DEBUG) << "Will replace existing reference pin_at_addr value "
-                     << it->second.pinned_at_addr;
+                 << " pinned_at_off " << pinned_at_off;
+  if (pinned_at_off != -1) {
+    if (it->second.pinned_at_off != -1) {
+      RAY_LOG(DEBUG) << "Will replace existing reference pinned_at_off value "
+                     << it->second.pinned_at_off;
     }
-    it->second.pinned_at_addr = pinned_at_addr;
+    it->second.pinned_at_off = pinned_at_off;
   }
   if (it->second.locations.emplace(node_id).second) {
     // Only push to subscribers if we added a new location. We eagerly add the pinned
@@ -1458,8 +1458,8 @@ void ReferenceCounter::PushToLocationSubscribers(ReferenceTable::iterator it) {
                  << "], spilled node ID: " << spilled_node_id
                  << ", and object size: " << object_size
                  << ", and primary node ID: " << primary_node_id << ", pending creation? "
-                 << it->second.pending_creation << ", pinned_at_addr "
-                 << it->second.pinned_at_addr;
+                 << it->second.pending_creation << ", pinned_at_off "
+                 << it->second.pinned_at_off;
   rpc::PubMessage pub_message;
   pub_message.set_key_id(object_id.Binary());
   pub_message.set_channel_type(rpc::ChannelType::WORKER_OBJECT_LOCATIONS_CHANNEL);
@@ -1496,7 +1496,7 @@ void ReferenceCounter::FillObjectInformationInternal(
   auto primary_node_id = it->second.pinned_at_raylet_id.value_or(NodeID::Nil());
   object_info->set_primary_node_id(primary_node_id.Binary());
   object_info->set_pending_creation(it->second.pending_creation);
-  object_info->set_pinned_at_addr(it->second.pinned_at_addr);
+  object_info->set_pinned_at_off(it->second.pinned_at_off);
 }
 
 void ReferenceCounter::PublishObjectLocationSnapshot(const ObjectID &object_id) {

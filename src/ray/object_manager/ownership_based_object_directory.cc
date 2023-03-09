@@ -56,7 +56,7 @@ bool UpdateObjectLocations(const ObjectID &object_id,
                            NodeID *spilled_node_id,
                            bool *pending_creation,
                            size_t *object_size,
-                           uint64_t *pinned_at_addr) {
+                           int64_t *pinned_at_off) {
   bool is_updated = false;
   std::unordered_set<NodeID> new_node_ids;
 
@@ -65,7 +65,7 @@ bool UpdateObjectLocations(const ObjectID &object_id,
                  << *object_size << "  spilled at url " << location_info.spilled_url()
                  << " on node " << NodeID::FromBinary(location_info.spilled_node_id())
                  << " pending_creation " << location_info.pending_creation()
-                 << " pinned_at_addr " << location_info.pinned_at_addr();
+                 << " pinned_at_off " << location_info.pinned_at_off();
 
   // The size can be 0 if the update was a deletion. This assumes that an
   // object's size is always greater than 0.
@@ -103,8 +103,8 @@ bool UpdateObjectLocations(const ObjectID &object_id,
     *pending_creation = location_info.pending_creation();
     is_updated = true;
   }
-  if (location_info.pinned_at_addr() != *pinned_at_addr) {
-    *pinned_at_addr = location_info.pinned_at_addr();
+  if (location_info.pinned_at_off() != *pinned_at_off) {
+    *pinned_at_off = location_info.pinned_at_off();
     is_updated = true;
   }
 
@@ -306,7 +306,7 @@ void OwnershipBasedObjectDirectory::ObjectLocationSubscriptionCallback(
                                                 &it->second.spilled_node_id,
                                                 &it->second.pending_creation,
                                                 &it->second.object_size,
-                                                &it->second.pinned_at_addr);
+                                                &it->second.pinned_at_off);
 
   // If the lookup has failed, that means the object is lost. Trigger the callback in this
   // case to handle failure properly.

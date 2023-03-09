@@ -2996,11 +2996,11 @@ void CoreWorker::AddObjectLocationOwner(const ObjectID &object_id,
                    << ", node_id: " << node_id;
     return;
   }
-  uint64_t pinned_at_addr = 0;
-  plasma_store_provider_->GetSharedMemoryAddress(object_id, pinned_at_addr);
-  RAY_LOG(DEBUG) << "AddObjectLocationOwner() pinned_at_addr " << pinned_at_addr;
+  int64_t pinned_at_off = -1;
+  plasma_store_provider_->GetSharedMemoryAddress(object_id, pinned_at_off);
+  RAY_LOG(DEBUG) << "AddObjectLocationOwner() pinned_at_off " << pinned_at_off;
   auto reference_exists =
-      reference_counter_->AddObjectLocation(object_id, node_id, pinned_at_addr);
+      reference_counter_->AddObjectLocation(object_id, node_id, pinned_at_off);
   if (!reference_exists) {
     RAY_LOG(DEBUG) << "Object " + object_id.Hex() + " not found";
   }

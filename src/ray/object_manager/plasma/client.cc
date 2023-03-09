@@ -157,7 +157,7 @@ class PlasmaClient::Impl : public std::enable_shared_from_this<PlasmaClient::Imp
 
   Status Evict(int64_t num_bytes, int64_t &num_bytes_evicted);
 
-  Status GetSharedMemoryAddress(const ObjectID &object_id, uint64_t &plasma_addr);
+  Status GetSharedMemoryAddress(const ObjectID &object_id, int64_t &pinned_at_off);
 
   Status Disconnect();
 
@@ -719,20 +719,19 @@ Status PlasmaClient::Impl::Evict(int64_t num_bytes, int64_t &num_bytes_evicted) 
 }
 
 Status PlasmaClient::Impl::GetSharedMemoryAddress(const ObjectID &object_id,
-                                                  uint64_t &plasma_addr) {
+                                                  int64_t &pinned_at_off) {
   auto elem = objects_in_use_.find(object_id);
   if (elem == objects_in_use_.end()) {
     RAY_LOG(DEBUG) << "GetSharedMemoryAddress() object " << object_id << " not found";
-    plasma_addr = 0;
+    pinned_at_off = -1;
     return Status::ObjectNotFound("");
   }
-  ObjectInUseEntry *object_entry = elem->second.get();
-  plasma_addr =
-      reinterpret_cast<uint64_t>(LookupMmappedFile(object_entry->object.store_fd)) +
-      object_entry->object.data_offset;
-  RAY_LOG(DEBUG) << "GetSharedMemoryAddress() object " << object_id << " has plasma_addr "
-                 << plasma_addr << " count " << object_entry->count << " is_sealed "
-                 << object_entry->is_sealed;
+  PlasmaObject *object = &elem->second->object;
+  pinned_at_off = object->data_offset;
+  RAY_LOG(DEBUG) << "GetSharedMemoryAddress() object " << object_id
+                 << " has plasma_offset " << std::hex << pinned_at_off << " count "
+                 << std::dec << elem->second->count << " is_sealed "
+                 << elem->second->is_sealed;
   return Status::OK();
 }
 
@@ -866,8 +865,8 @@ Status PlasmaClient::Evict(int64_t num_bytes, int64_t &num_bytes_evicted) {
 }
 
 Status PlasmaClient::GetSharedMemoryAddress(const ObjectID &object_id,
-                                            uint64_t &plasma_addr) {
-  return impl_->GetSharedMemoryAddress(object_id, plasma_addr);
+                                            int64_t &pinned_at_off) {
+  return impl_->GetSharedMemoryAddress(object_id, pinned_at_off);
 }
 
 Status PlasmaClient::Disconnect() { return impl_->Disconnect(); }

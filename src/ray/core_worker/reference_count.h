@@ -415,7 +415,7 @@ class ReferenceCounter : public ReferenceCounterInterface,
   /// \return True if the reference exists, false otherwise.
   bool AddObjectLocation(const ObjectID &object_id,
                          const NodeID &node_id,
-                         uint64_t pinned_at_addr) LOCKS_EXCLUDED(mutex_);
+                         int64_t pinned_at_off) LOCKS_EXCLUDED(mutex_);
 
   /// Remove a location for the given object. The owner must have the object ref in
   /// scope.
@@ -677,7 +677,7 @@ class ReferenceCounter : public ReferenceCounterInterface,
     /// using the ObjectID.
     absl::optional<rpc::Address> owner_address;
 
-    uint64_t pinned_at_addr = 0;
+    int64_t pinned_at_off = -1;
     /// If this object is owned by us and stored in plasma, and reference
     /// counting is enabled, then some raylet must be pinning the object value.
     /// This is the address of that raylet.
@@ -898,7 +898,7 @@ class ReferenceCounter : public ReferenceCounterInterface,
   /// \param[in] node_id The new object location to be added.
   void AddObjectLocationInternal(ReferenceTable::iterator it,
                                  const NodeID &node_id,
-                                 uint64_t pinned_at_addr = 0)
+                                 int64_t pinned_at_off = -1)
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
   /// Remove a location for the given object. The owner must have the object ref in
