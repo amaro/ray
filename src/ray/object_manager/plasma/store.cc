@@ -72,6 +72,7 @@ ray::ObjectID GetCreateRequestObjectId(const std::vector<uint8_t> &message) {
 PlasmaStore::PlasmaStore(instrumented_io_context &main_service,
                          IAllocator &allocator,
                          ray::FileSystemMonitor &fs_monitor,
+                         EndpointManager &ep_mgr,
                          const std::string &socket_name,
                          uint32_t delay_on_oom_ms,
                          float object_spilling_threshold,
@@ -85,6 +86,7 @@ PlasmaStore::PlasmaStore(instrumented_io_context &main_service,
       socket_(main_service),
       allocator_(allocator),
       fs_monitor_(fs_monitor),
+      ep_mgr_(ep_mgr),
       add_object_callback_(add_object_callback),
       delete_object_callback_(delete_object_callback),
       object_lifecycle_mgr_(allocator_, delete_object_callback_),
@@ -125,10 +127,14 @@ PlasmaStore::~PlasmaStore() {}
 
 void PlasmaStore::Start() {
   // Start listening for clients.
+  ep_mgr_.listen_start(30000);
   DoAccept();
 }
 
-void PlasmaStore::Stop() { acceptor_.close(); }
+void PlasmaStore::Stop() {
+  acceptor_.close();
+  ep_mgr_.stop();
+}
 
 // If this client is not already using the object, add the client to the
 // object's list of clients, otherwise do nothing.

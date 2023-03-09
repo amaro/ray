@@ -16,7 +16,7 @@ constexpr int ONESIDED_PERMISSIONS = IBV_ACCESS_LOCAL_WRITE |
 
 class LocalMR {
  public:
-  LocalMR() = delete;
+  LocalMR() : laddr_(0), length_(0) {}
   template <typename T>
   LocalMR(T *laddr, size_t length)
       : laddr_(reinterpret_cast<uint8_t *>(laddr)), length_(length) {}
@@ -124,8 +124,9 @@ class PlasmaEndpoint : public RDMAPeer {
 
 class EndpointManager {
  public:
-  EndpointManager(LocalMR unreg_local_mr) : unreg_local_mr_(unreg_local_mr) {}
+  EndpointManager() {}
 
+  void set_allocation(void *addr, int64_t size);
   // creates one PlasmaEndpoint per NUM_LISTEN_PORTS and listens for incoming
   // connections
   void listen_start(int start_port);
@@ -137,17 +138,18 @@ class EndpointManager {
   // wait for the actively connected peers (not us) to trigger disconnect
   // process
   void listen_wait_connected();
+  void stop();
   // connect to the given ip and port, and create an Endpoint that corresponds
   // to the given IP
   void connect_to(const std::string &ip, int port);
   // get the ep connected to a given IP; return nullptr if not found
   PlasmaEndpoint *get_ep_to(const std::string &ip);
-  size_t num_connected_eps() const { return ips_to_connected_eps_.size(); }
-  void add_connected_ep(const std::string &ip, PlasmaEndpoint *ep) {
-    ips_to_connected_eps_.emplace(ip, ep);
-  }
+  size_t num_connected_eps() const;
+  void add_connected_ep(const std::string &ip, PlasmaEndpoint *ep);
 
  private:
+  void disconnect_active_eps();
+
   // storage for PlasmaEndpoints; not all of these are connected eps
   std::vector<std::unique_ptr<PlasmaEndpoint>> eps_;
   std::unordered_map<std::string, PlasmaEndpoint *> ips_to_connected_eps_;

@@ -302,14 +302,15 @@ cc_library(
     hdrs = [
         "src/ray/object_manager/plasma/rdma/rdmapeer.h",
         "src/ray/object_manager/plasma/rdma/plasmaendpoint.h",
-        "src/ray/object_manager/plasma/rdma/rpc.h"
+        "src/ray/object_manager/plasma/rdma/rpc.h",
     ],
     copts = COPTS,
+    strip_include_prefix = "src",
     deps = [
         "@system_libs//:mlx5",
         "@system_libs//:rdmacm",
         "@system_libs//:ibverbs",
-        ":ray_util"
+        ":ray_util",
     ]
 )
 
@@ -389,6 +390,9 @@ cc_library(
         "src/ray/object_manager/plasma/stats_collector.h",
         "src/ray/object_manager/plasma/store.h",
         "src/ray/object_manager/plasma/store_runner.h",
+        "src/ray/object_manager/plasma/rdma/plasmaendpoint.h",
+        "src/ray/object_manager/plasma/rdma/rdmapeer.h",
+        "src/ray/object_manager/plasma/rdma/rpc.h",
         "src/ray/thirdparty/dlmalloc.c",
     ],
     copts = PLASMA_COPTS,

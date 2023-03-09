@@ -8,6 +8,7 @@
 #include "ray/common/file_system_monitor.h"
 #include "ray/object_manager/plasma/plasma_allocator.h"
 #include "ray/object_manager/plasma/store.h"
+#include "ray/object_manager/plasma/rdma/plasmaendpoint.h"
 
 namespace plasma {
 
@@ -45,6 +46,7 @@ class PlasmaStoreRunner {
   mutable instrumented_io_context main_service_;
   std::unique_ptr<PlasmaAllocator> allocator_;
   std::unique_ptr<ray::FileSystemMonitor> fs_monitor_;
+  std::unique_ptr<EndpointManager> rdma_mgr_;
   std::unique_ptr<PlasmaStore> store_;
 };
 

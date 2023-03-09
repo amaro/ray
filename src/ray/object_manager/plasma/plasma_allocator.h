@@ -24,6 +24,7 @@
 #include "absl/types/optional.h"
 #include "ray/object_manager/plasma/allocator.h"
 #include "ray/object_manager/plasma/common.h"
+#include "ray/object_manager/plasma/rdma/plasmaendpoint.h"
 
 namespace plasma {
 
@@ -43,7 +44,8 @@ class PlasmaAllocator : public IAllocator {
   PlasmaAllocator(const std::string &plasma_directory,
                   const std::string &fallback_directory,
                   bool hugepage_enabled,
-                  int64_t footprint_limit);
+                  int64_t footprint_limit,
+                  EndpointManager &ep_mgr);
 
   /// On linux, it allocates memory from a pre-mmapped file from /dev/shm.
   /// On other system, it allocates memory from a pre-mmapped file on disk.

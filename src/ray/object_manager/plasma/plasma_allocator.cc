@@ -19,6 +19,7 @@
 
 #include "ray/common/ray_config.h"
 #include "ray/object_manager/plasma/malloc.h"
+#include "ray/object_manager/plasma/rdma/plasmaendpoint.h"
 #include "ray/util/logging.h"
 
 namespace plasma {
@@ -61,7 +62,8 @@ const int64_t kDlMallocReserved = 256 * sizeof(size_t);
 PlasmaAllocator::PlasmaAllocator(const std::string &plasma_directory,
                                  const std::string &fallback_directory,
                                  bool hugepage_enabled,
-                                 int64_t footprint_limit)
+                                 int64_t footprint_limit,
+                                 EndpointManager &ep_mgr)
     : kFootprintLimit(footprint_limit),
       kAlignment(kAllocationAlignment),
       allocated_(0),
@@ -76,6 +78,7 @@ PlasmaAllocator::PlasmaAllocator(const std::string &plasma_directory,
   RAY_CHECK(allocation.has_value())
       << "PlasmaAllocator initialization failed."
       << " It's likely we don't have enought space in " << plasma_directory;
+  ep_mgr.set_allocation(allocation.value().address, allocation.value().size);
   // This will unmap the file, but the next one created will be as large
   // as this one (this is an implementation detail of dlmalloc).
   Free(std::move(allocation.value()));

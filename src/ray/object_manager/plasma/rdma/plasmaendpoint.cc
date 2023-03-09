@@ -1,4 +1,4 @@
-#include "plasmaendpoint.h"
+#include "ray/object_manager/plasma/rdma/plasmaendpoint.h"
 
 #include <arpa/inet.h>
 #include <fcntl.h>
@@ -107,7 +107,6 @@ void PlasmaEndpoint::thread_connect_passive(unsigned int port, EndpointManager *
   addr.sin_family = AF_INET;
   addr.sin_port = htons(port);
 
-  printf("launched thread_connect_passive() on port %d\n", port);
   RDMAContext ctx(port);
   RAY_CHECK((ctx.event_channel = rdma_create_event_channel()) != nullptr);
   int channel_fd = ctx.event_channel->fd;
@@ -120,7 +119,7 @@ void PlasmaEndpoint::thread_connect_passive(unsigned int port, EndpointManager *
   RAY_CHECK(rdma_bind_addr(listener, (sockaddr *)&addr) == 0);
   RAY_CHECK(rdma_listen(listener, 1) == 0);
 
-  printf("listening on port: %d\n", port);
+  RAY_LOG(DEBUG) << "listening on port " << port;
 
   struct pollfd event_poll {
     channel_fd, POLLIN, 0
@@ -169,7 +168,7 @@ void PlasmaEndpoint::thread_connect_passive(unsigned int port, EndpointManager *
 
 void PlasmaEndpoint::handle_conn_request(RDMAContext &ctx, rdma_cm_id *cm_id) {
   assert(!ctx.connected);
-  puts("connect request");
+  RAY_LOG(DEBUG) << "connect request";
 
   if (!pds_cqs_created) create_pds_cqs(cm_id->verbs);
 
@@ -235,10 +234,8 @@ void PlasmaEndpoint::exchange_mrs() {
     RAY_CHECK(0);
   }
 
-  printf("ep=%p received peer's region raddr=%p len=%lu\n",
-         static_cast<void *>(this),
-         peer_mr_.raddr(),
-         peer_mr_.length());
+  RAY_LOG(DEBUG) << "ep=" << this << " received peer's region raddr=" << peer_mr_.raddr()
+                 << " len=" << peer_mr_.length();
 }
 
 void PlasmaEndpoint::register_twosided(LocalMR &mr) {
@@ -267,6 +264,12 @@ void PlasmaEndpoint::post_recv_ctrlreq(CtrlReq &req, uint32_t lkey) {
   post_recv(get_ctrl_ctx(), &req, sizeof(CtrlReq), lkey);
 }
 
+void EndpointManager::set_allocation(void *addr, int64_t size) {
+  RAY_LOG(DEBUG) << "EndpointManager received allocation of addr=" << addr
+                 << " size=" << size;
+  unreg_local_mr_ = LocalMR(addr, size);
+}
+
 void EndpointManager::listen_start(int start_port) {
   for (auto i = 0; i < NUM_LISTEN_PORTS; i++) {
     std::unique_ptr<PlasmaEndpoint> ep =
@@ -293,6 +296,15 @@ void EndpointManager::listen_wait_connected() {
   }
 }
 
+void EndpointManager::stop() {
+  // stop accepting new connections
+  listen_stop_notconnected();
+  // close connections we actively opened
+  disconnect_active_eps();
+  // wait for passively connected eps to close
+  listen_wait_connected();
+}
+
 void EndpointManager::connect_to(const std::string &ip, int port) {
   std::unique_ptr<PlasmaEndpoint> ep =
       std::make_unique<PlasmaEndpoint>(this, unreg_local_mr_);
@@ -308,5 +320,20 @@ PlasmaEndpoint *EndpointManager::get_ep_to(const std::string &ip) {
     return search->second;
   } else {
     return nullptr;
+  }
+}
+
+size_t EndpointManager::num_connected_eps() const { return ips_to_connected_eps_.size(); }
+
+void EndpointManager::add_connected_ep(const std::string &ip, PlasmaEndpoint *ep) {
+  ips_to_connected_eps_.emplace(ip, ep);
+}
+
+void EndpointManager::disconnect_active_eps() {
+  for (auto &ep : eps_) {
+    if (ep->eptype() == PlasmaEndpoint::EpType::ACTIVE && ep->connected()) {
+      std::string peer_ip = ep->get_peer_ip();
+      ips_to_connected_eps_.erase(peer_ip);
+    }
   }
 }
