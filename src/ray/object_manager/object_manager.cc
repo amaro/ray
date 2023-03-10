@@ -270,6 +270,7 @@ void ObjectManager::CancelPull(uint64_t request_id) {
 }
 
 void ObjectManager::SendPullRequest(const ObjectID &object_id, const NodeID &client_id) {
+  RAY_LOG(DEBUG) << "amaro. will send pull request for " << object_id << " to client " << client_id;
   auto rpc_client = GetRpcClient(client_id);
   if (rpc_client) {
     // Try pulling from the client.
