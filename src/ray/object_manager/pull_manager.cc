@@ -23,7 +23,8 @@ namespace ray {
 PullManager::PullManager(
     NodeID &self_node_id,
     const std::function<bool(const ObjectID &)> object_is_local,
-    const std::function<void(const ObjectID &, const NodeID &)> send_pull_request,
+    const std::function<void(const ObjectID &, const NodeID &, int64_t pinned_at_off)>
+        send_pull_request,
     const std::function<void(const ObjectID &)> cancel_pull_request,
     const std::function<void(const ObjectID &, rpc::ErrorType)> fail_pull_request,
     const RestoreSpilledObjectCallback restore_spilled_object,
@@ -359,13 +360,15 @@ void PullManager::OnLocationChange(const ObjectID &object_id,
                                    const std::string &spilled_url,
                                    const NodeID &spilled_node_id,
                                    bool pending_creation,
-                                   size_t object_size) {
+                                   size_t object_size,
+                                   int64_t pinned_at_off) {
   // Exit if the Pull request has already been fulfilled or canceled.
   auto it = object_pull_requests_.find(object_id);
   if (it == object_pull_requests_.end()) {
     return;
   }
 
+  RAY_LOG(DEBUG) << "amaro. OnLocationChange() pinned_at_off " << pinned_at_off;
   const bool was_pullable_before = it->second.IsPullable();
   // Reset the list of clients that are now expected to have the object.
   // NOTE(swang): Since we are overwriting the previous list of clients,
@@ -396,6 +399,7 @@ void PullManager::OnLocationChange(const ObjectID &object_id,
                           "in too many objects being fetched to this node";
     }
   }
+  it->second.pinned_at_off = pinned_at_off;
   const bool is_pullable_after = it->second.IsPullable();
 
   if (was_pullable_before != is_pullable_after) {
@@ -508,6 +512,7 @@ bool PullManager::PullFromRandomLocation(const ObjectID &object_id) {
 
   auto &node_vector = it->second.client_locations;
   auto &spilled_node_id = it->second.spilled_node_id;
+  auto &pinned_at_off = it->second.pinned_at_off;
 
   if (node_vector.empty()) {
     // Pull from remote node, it will be restored prior to push.
@@ -515,7 +520,7 @@ bool PullManager::PullFromRandomLocation(const ObjectID &object_id) {
       RAY_LOG(DEBUG) << "Sending pull request from " << self_node_id_
                      << " to spilled location at " << spilled_node_id << " of object "
                      << object_id;
-      send_pull_request_(object_id, spilled_node_id);
+      send_pull_request_(object_id, spilled_node_id, -1);
       return true;
     }
     // The timer should never fire if there are no expected client locations.
@@ -532,7 +537,7 @@ bool PullManager::PullFromRandomLocation(const ObjectID &object_id) {
   RAY_CHECK(node_id != self_node_id_);
   RAY_LOG(DEBUG) << "Sending pull request from " << self_node_id_
                  << " to in-memory location at " << node_id << " of object " << object_id;
-  send_pull_request_(object_id, node_id);
+  send_pull_request_(object_id, node_id, pinned_at_off);
   return true;
 }
 

@@ -122,10 +122,10 @@ ObjectManager::ObjectManager(
   const auto &object_is_local = [this](const ObjectID &object_id) {
     return local_objects_.count(object_id) != 0;
   };
-  const auto &send_pull_request = [this](const ObjectID &object_id,
-                                         const NodeID &client_id) {
-    SendPullRequest(object_id, client_id);
-  };
+  const auto &send_pull_request =
+      [this](const ObjectID &object_id, const NodeID &client_id, int64_t pinned_at_off) {
+        SendPullRequest(object_id, client_id, pinned_at_off);
+      };
   const auto &cancel_pull_request = [this](const ObjectID &object_id) {
     // We must abort this object because it may have only been partially
     // created and will cause a leak if we never receive the rest of the
@@ -239,13 +239,15 @@ uint64_t ObjectManager::Pull(const std::vector<rpc::ObjectReference> &object_ref
                                 const std::string &spilled_url,
                                 const NodeID &spilled_node_id,
                                 bool pending_creation,
-                                size_t object_size) {
+                                size_t object_size,
+                                int64_t pinned_at_off) {
     pull_manager_->OnLocationChange(object_id,
                                     client_ids,
                                     spilled_url,
                                     spilled_node_id,
                                     pending_creation,
-                                    object_size);
+                                    object_size,
+                                    pinned_at_off);
   };
 
   for (const auto &ref : objects_to_locate) {
@@ -269,8 +271,12 @@ void ObjectManager::CancelPull(uint64_t request_id) {
   }
 }
 
-void ObjectManager::SendPullRequest(const ObjectID &object_id, const NodeID &client_id) {
-  RAY_LOG(DEBUG) << "amaro. will send pull request for " << object_id << " to client " << client_id;
+void ObjectManager::SendPullRequest(const ObjectID &object_id,
+                                    const NodeID &client_id,
+                                    int64_t pinned_at_off) {
+  RAY_LOG(DEBUG) << "amaro. will send pull request for " << object_id << " to client "
+                 << client_id << " pinned_at_off " << pinned_at_off;
+
   auto rpc_client = GetRpcClient(client_id);
   if (rpc_client) {
     // Try pulling from the client.

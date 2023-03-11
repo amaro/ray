@@ -376,7 +376,9 @@ class ObjectManager : public ObjectManagerInterface,
   ///
   /// \param object_id Object id
   /// \param client_id Remote server client id
-  void SendPullRequest(const ObjectID &object_id, const NodeID &client_id);
+  void SendPullRequest(const ObjectID &object_id,
+                       const NodeID &client_id,
+                       int64_t pinned_at_off);
 
   /// Get the rpc client according to the node ID
   ///

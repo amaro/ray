@@ -78,7 +78,7 @@ bool UpdateObjectLocations(const ObjectID &object_id,
   for (auto const &node_id_binary : location_info.node_ids()) {
     const auto node_id = NodeID::FromBinary(node_id_binary);
     new_node_ids.emplace(node_id);
-    RAY_LOG(DEBUG) << "  found on node " << node_id << " alive?"
+    RAY_LOG(DEBUG) << "  found on node " << node_id << " alive? "
                    << !gcs_client->Nodes().IsRemoved(node_id);
   }
   // Filter out the removed nodes from the object locations.
@@ -330,12 +330,15 @@ void OwnershipBasedObjectDirectory::ObjectLocationSubscriptionCallback(
       // We can call the callback directly without worrying about invalidating caller
       // iterators since this is already running in the subscription callback stack.
       // See https://github.com/ray-project/ray/issues/2959.
+      // amaro: call back is PullManager::OnLocationChange(), provided at
+      // PullManager::Pull()
       func(object_id,
            it->second.current_object_locations,
            it->second.spilled_url,
            it->second.spilled_node_id,
            it->second.pending_creation,
-           it->second.object_size);
+           it->second.object_size,
+           it->second.pinned_at_off);
     }
   }
 }
@@ -416,6 +419,7 @@ ray::Status OwnershipBasedObjectDirectory::SubscribeObjectLocations(
     auto &spilled_node_id = listener_state.spilled_node_id;
     bool pending_creation = listener_state.pending_creation;
     auto object_size = listener_state.object_size;
+    auto pinned_at_off = listener_state.pinned_at_off;
     RAY_LOG(DEBUG) << "Already subscribed to object's locations, pushing location "
                       "updates to subscribers for object "
                    << object_id << ": " << locations.size()
@@ -432,13 +436,15 @@ ray::Status OwnershipBasedObjectDirectory::SubscribeObjectLocations(
          spilled_node_id,
          pending_creation,
          object_size,
-         object_id]() {
+         object_id,
+         pinned_at_off]() {
           callback(object_id,
                    locations,
                    spilled_url,
                    spilled_node_id,
                    pending_creation,
-                   object_size);
+                   object_size,
+                   pinned_at_off);
         },
         "ObjectDirectory.SubscribeObjectLocations");
   }
@@ -509,7 +515,8 @@ void OwnershipBasedObjectDirectory::HandleNodeRemoved(const NodeID &node_id) {
              listener.spilled_url,
              listener.spilled_node_id,
              listener.pending_creation,
-             listener.object_size);
+             listener.object_size,
+             listener.pinned_at_off);
       }
     }
   }
