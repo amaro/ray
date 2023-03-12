@@ -62,8 +62,11 @@ class PullManager {
   PullManager(
       NodeID &self_node_id,
       const std::function<bool(const ObjectID &)> object_is_local,
-      const std::function<void(const ObjectID &, const NodeID &, int64_t pinned_at_off)>
-          send_pull_request,
+      const std::function<void(const ObjectID &,
+                               const NodeID &,
+                               int64_t pinned_at_off,
+                               size_t object_size,
+                               const rpc::Address &owner_address)> send_pull_request,
       const std::function<void(const ObjectID &)> cancel_pull_request,
       const std::function<void(const ObjectID &, rpc::ErrorType)> fail_pull_request,
       const RestoreSpilledObjectCallback restore_spilled_object,
@@ -116,7 +119,8 @@ class PullManager {
                         const NodeID &spilled_node_id,
                         bool pending_creation,
                         size_t object_size,
-                        int64_t pinned_at_off);
+                        int64_t pinned_at_off,
+                        const rpc::Address &owner_address);
 
   /// Cancel an existing pull request.
   ///
@@ -192,6 +196,7 @@ class PullManager {
     bool object_size_set = false;
     size_t object_size = 0;
     int64_t pinned_at_off = -1;
+    rpc::Address owner_address;
     // All bundle requests that haven't been canceled yet that require this
     // object. This includes bundle requests whose objects are not actively
     // being pulled.
@@ -414,7 +419,11 @@ class PullManager {
   /// See the constructor's arguments.
   NodeID self_node_id_;
   const std::function<bool(const ObjectID &)> object_is_local_;
-  const std::function<void(const ObjectID &, const NodeID &, int64_t pinned_at_off)>
+  const std::function<void(const ObjectID &,
+                           const NodeID &,
+                           int64_t pinned_at_off,
+                           size_t object_size,
+                           const rpc::Address &owner_address)>
       send_pull_request_;
   const std::function<void(const ObjectID &)> cancel_pull_request_;
   const RestoreSpilledObjectCallback restore_spilled_object_;

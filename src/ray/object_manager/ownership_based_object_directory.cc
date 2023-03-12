@@ -338,7 +338,8 @@ void OwnershipBasedObjectDirectory::ObjectLocationSubscriptionCallback(
            it->second.spilled_node_id,
            it->second.pending_creation,
            it->second.object_size,
-           it->second.pinned_at_off);
+           it->second.pinned_at_off,
+           it->second.owner_address);
     }
   }
 }
@@ -420,6 +421,7 @@ ray::Status OwnershipBasedObjectDirectory::SubscribeObjectLocations(
     bool pending_creation = listener_state.pending_creation;
     auto object_size = listener_state.object_size;
     auto pinned_at_off = listener_state.pinned_at_off;
+    auto &owner_address = listener_state.owner_address;
     RAY_LOG(DEBUG) << "Already subscribed to object's locations, pushing location "
                       "updates to subscribers for object "
                    << object_id << ": " << locations.size()
@@ -437,14 +439,16 @@ ray::Status OwnershipBasedObjectDirectory::SubscribeObjectLocations(
          pending_creation,
          object_size,
          object_id,
-         pinned_at_off]() {
+         pinned_at_off,
+         owner_address]() {
           callback(object_id,
                    locations,
                    spilled_url,
                    spilled_node_id,
                    pending_creation,
                    object_size,
-                   pinned_at_off);
+                   pinned_at_off,
+                   owner_address);
         },
         "ObjectDirectory.SubscribeObjectLocations");
   }
@@ -516,7 +520,8 @@ void OwnershipBasedObjectDirectory::HandleNodeRemoved(const NodeID &node_id) {
              listener.spilled_node_id,
              listener.pending_creation,
              listener.object_size,
-             listener.pinned_at_off);
+             listener.pinned_at_off,
+             listener.owner_address);
       }
     }
   }

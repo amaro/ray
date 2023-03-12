@@ -48,7 +48,8 @@ using OnLocationsFound = std::function<void(const ray::ObjectID &object_id,
                                             const NodeID &,
                                             bool pending_creation,
                                             size_t object_size,
-                                            int64_t pinned_at_off)>;
+                                            int64_t pinned_at_off,
+                                            const rpc::Address &owner_address)>;
 
 class IObjectDirectory {
  public:
