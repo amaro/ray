@@ -380,6 +380,10 @@ class ObjectManager : public ObjectManagerInterface,
                        const NodeID &client_id,
                        int64_t pinned_at_off);
 
+  bool GetRemoteObjectRDMA(const ObjectID &object_id,
+                           const NodeID &client_id,
+                           int64_t pinned_at_off);
+
   /// Get the rpc client according to the node ID
   ///
   /// \param node_id Remote node id, will send rpc request to it

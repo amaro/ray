@@ -274,8 +274,11 @@ void ObjectManager::CancelPull(uint64_t request_id) {
 void ObjectManager::SendPullRequest(const ObjectID &object_id,
                                     const NodeID &client_id,
                                     int64_t pinned_at_off) {
-  RAY_LOG(DEBUG) << "amaro. will send pull request for " << object_id << " to client "
-                 << client_id << " pinned_at_off " << pinned_at_off;
+  // amaro: Let's first try to get the object using RDMA, if that fails let's
+  // use the regular RPC mechanism
+  if (GetRemoteObjectRDMA(object_id, client_id, pinned_at_off)) {
+    return;
+  }
 
   auto rpc_client = GetRpcClient(client_id);
   if (rpc_client) {
@@ -301,6 +304,22 @@ void ObjectManager::SendPullRequest(const ObjectID &object_id,
                    << client_id << " of object " << object_id
                    << " , setup rpc connection failed.";
   }
+}
+
+bool ObjectManager::GetRemoteObjectRDMA(const ObjectID &object_id,
+                                        const NodeID &client_id,
+                                        int64_t pinned_at_off) {
+  RemoteConnectionInfo connection_info(client_id);
+  object_directory_->LookupRemoteConnectionInfo(connection_info);
+  if (!connection_info.Connected()) {
+    return false;
+  }
+
+  RAY_LOG(DEBUG) << "amaro. GetRemoteObjectRDMA() send pull request for " << object_id
+                 << " to client ip " << connection_info.ip << " pinned_at_off "
+                 << pinned_at_off;
+
+  return false;
 }
 
 void ObjectManager::HandlePushTaskTimeout(const ObjectID &object_id,
