@@ -44,6 +44,7 @@ enum MessageType:long {
   PlasmaSealReply,
   // Get an object that is stored on the local Plasma store.
   PlasmaGetRequest,
+  PlasmaGetRemoteRequest,
   PlasmaGetReply,
   // Release an object.
   PlasmaReleaseRequest,
@@ -226,6 +227,32 @@ table PlasmaGetReply {
   mmap_sizes: [long];
   // The number of elements in both object_ids and plasma_objects arrays must agree.
   handles: [CudaHandle];
+}
+
+table PlasmaGetRemoteRequest {
+  // Where are we getting the object from.
+  owner_ip_address: string;
+  // ID of the object stored at remote Plasma store we are getting.
+  object_id: string;
+  // The remote offset we are getting the object from.
+  pinned_at_off: uint64;
+  // Whether or not the get request is from the core worker. It is used to record how many bytes are consumed by core workers.
+  is_from_worker: bool;
+}
+
+table PlasmaGetRemoteReply {
+  // ID of the object being returned.
+  object_id: string;
+  // Plasma object information
+  plasma_object: PlasmaObjectSpec;
+  // The file descriptor in the store that correspond to the file
+  // descriptor being sent to the client.
+  store_fd: int;
+  // Unique id for store_fd
+  unique_fd_id: long;
+  // Size in bytes of the segment for each store file descriptor (needed to call
+  // mmap).
+  mmap_size: long;
 }
 
 table PlasmaReleaseRequest {

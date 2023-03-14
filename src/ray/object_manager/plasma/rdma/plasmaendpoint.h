@@ -2,11 +2,12 @@
 
 #include <thread>
 #include <unordered_map>
+#include <vector>
 
-#include "ray/util/logging.h"
-#include "rdmapeer.h"
-#include "rpc.h"
+#include "ray/object_manager/plasma/rdma/rdmapeer.h"
+#include "ray/object_manager/plasma/rdma/rpc.h"
 
+namespace plasma {
 constexpr int NUM_LISTEN_PORTS = 4;
 constexpr int LISTEN_PORTS_START = 30000;
 constexpr int TWOSIDED_PERMISSIONS = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_RELAXED_ORDERING;
@@ -157,3 +158,4 @@ class EndpointManager {
   // an unregistered local mr that all endpoints will register
   LocalMR unreg_local_mr_;
 };
+}  // namespace plasma

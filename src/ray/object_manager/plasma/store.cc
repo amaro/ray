@@ -261,6 +261,21 @@ void PlasmaStore::ProcessGetRequest(const std::shared_ptr<Client> &client,
   get_request_queue_.AddRequest(client, object_ids, timeout_ms, is_from_worker);
 }
 
+void PlasmaStore::ProcessGetRemoteRequest(const std::shared_ptr<Client> &client,
+                                          const std::string &owner_ip_address,
+                                          const ObjectID &object_id,
+                                          int64_t pinned_at_off,
+                                          bool is_from_worker) {
+  PlasmaEndpoint *ep = ep_mgr_.get_ep_to(owner_ip_address);
+  if (!ep) {
+    ep_mgr_.connect_to(owner_ip_address, 30000);
+    ep = ep_mgr_.get_ep_to(owner_ip_address);
+    RAY_CHECK(ep);
+  }
+
+  RAY_CHECK(0) << "amaro here";
+}
+
 int PlasmaStore::RemoveFromClientObjectIds(const ObjectID &object_id,
                                            const std::shared_ptr<Client> &client) {
   auto &object_ids = client->GetObjectIDs();
@@ -425,6 +440,20 @@ Status PlasmaStore::ProcessMessage(const std::shared_ptr<Client> &client,
     RAY_RETURN_NOT_OK(ReadGetRequest(
         input, input_size, object_ids_to_get, &timeout_ms, &is_from_worker));
     ProcessGetRequest(client, object_ids_to_get, timeout_ms, is_from_worker);
+  } break;
+  case fb::MessageType::PlasmaGetRemoteRequest: {
+    std::string owner_ip_address;
+    ObjectID object_id_to_get;
+    int64_t pinned_at_off;
+    bool is_from_worker;
+    RAY_RETURN_NOT_OK(ReadGetRemoteRequest(input,
+                                           input_size,
+                                           &owner_ip_address,
+                                           &object_id_to_get,
+                                           &pinned_at_off,
+                                           &is_from_worker));
+    ProcessGetRemoteRequest(
+        client, owner_ip_address, object_id_to_get, pinned_at_off, is_from_worker);
   } break;
   case fb::MessageType::PlasmaReleaseRequest: {
     RAY_RETURN_NOT_OK(ReadReleaseRequest(input, input_size, &object_id));

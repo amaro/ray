@@ -82,6 +82,12 @@ class PlasmaClientInterface {
                      std::vector<ObjectBuffer> *object_buffers,
                      bool is_from_worker) = 0;
 
+  virtual Status GetRemote(const ObjectID &object_id,
+                           const std::string &ip_addr,
+                           ObjectBuffer *object_buffer,
+                           int64_t pinned_at_off,
+                           bool is_from_worker) = 0;
+
   /// Seal an object in the object store. The object will be immutable after
   /// this
   /// call.
@@ -254,6 +260,13 @@ class PlasmaClient : public PlasmaClientInterface {
              int64_t timeout_ms,
              std::vector<ObjectBuffer> *object_buffers,
              bool is_from_worker);
+
+  /// Get an object from a remote plasma store using RDMA
+  Status GetRemote(const ObjectID &object_id,
+                   const std::string &ip_addr,
+                   ObjectBuffer *object_buffer,
+                   int64_t pinned_at_off,
+                   bool is_from_worker);
 
   /// Tell Plasma that the client no longer needs the object. This should be
   /// called after Get() or Create() when the client is done with the object.

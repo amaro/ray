@@ -383,6 +383,7 @@ class ObjectManager : public ObjectManagerInterface,
                        const rpc::Address &owner_address);
 
   bool GetRemoteObjectRDMA(const ObjectID &object_id,
+                           const NodeID &client_id,
                            int64_t pinned_at_off,
                            size_t object_size,
                            const rpc::Address &owner_address);

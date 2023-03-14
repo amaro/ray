@@ -13,6 +13,7 @@
 
 #include "ray/util/logging.h"
 
+namespace plasma {
 struct RDMAContext;
 
 static constexpr uint32_t QP_MAX_2SIDED_WRS = 256;
@@ -721,3 +722,5 @@ inline void RDMAPeer::end_batched_ops() {
 }
 
 inline RDMAContext *RDMAPeer::get_batch_ctx() { return curr_batch_ctxs[current_tid]; }
+
+}  // namespace plasma

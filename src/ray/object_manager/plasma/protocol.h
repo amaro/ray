@@ -142,11 +142,24 @@ Status SendGetRequest(const std::shared_ptr<StoreConn> &store_conn,
                       int64_t timeout_ms,
                       bool is_from_worker);
 
+Status SendGetRemoteRequest(const std::shared_ptr<StoreConn> &store_conn,
+                            const std::string &ip_addr,
+                            const ObjectID &object_id,
+                            int64_t pinned_at_off,
+                            bool is_from_worker);
+
 Status ReadGetRequest(uint8_t *data,
                       size_t size,
                       std::vector<ObjectID> &object_ids,
                       int64_t *timeout_ms,
                       bool *is_from_worker);
+
+Status ReadGetRemoteRequest(uint8_t *req_buf,
+                            size_t req_size,
+                            std::string *owner_ip_address,
+                            ObjectID *object_id,
+                            int64_t *pinned_at_off,
+                            bool *is_from_worker);
 
 Status SendGetReply(const std::shared_ptr<Client> &client,
                     ObjectID object_ids[],
@@ -162,6 +175,13 @@ Status ReadGetReply(uint8_t *data,
                     int64_t num_objects,
                     std::vector<MEMFD_TYPE> &store_fds,
                     std::vector<int64_t> &mmap_sizes);
+
+Status ReadGetRemoteReply(uint8_t *reply_buf,
+                          size_t reply_buf_size,
+                          ObjectID &object_id,
+                          PlasmaObject &plasma_object,
+                          MEMFD_TYPE &store_fd,
+                          int64_t &mmap_size);
 
 /* Plasma Release message functions. */
 

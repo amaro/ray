@@ -284,7 +284,8 @@ void ObjectManager::SendPullRequest(const ObjectID &object_id,
   // amaro: Let's first try to get the object using RDMA, if that fails let's
   // use the regular RPC mechanism
   if (pinned_at_off != -1 &&
-      GetRemoteObjectRDMA(object_id, pinned_at_off, object_size, owner_address)) {
+      GetRemoteObjectRDMA(
+          object_id, client_id, pinned_at_off, object_size, owner_address)) {
     return;
   }
 
@@ -315,23 +316,40 @@ void ObjectManager::SendPullRequest(const ObjectID &object_id,
 }
 
 bool ObjectManager::GetRemoteObjectRDMA(const ObjectID &object_id,
+                                        const NodeID &client_id,
                                         int64_t pinned_at_off,
                                         size_t object_size,
                                         const rpc::Address &owner_address) {
-  // create space for object in plasma object store
-  //  Status s = store_client_->CreateAndSpillIfNeeded(
-  //    object_id,
-  //    owner_address,
-  //    static_cast<int64_t>(object_size),
-  //    nullptr,
-  //    static_cast<int64_t>(metadata_size),
-  //    &data,
-  //    plasma::flatbuf::ObjectSource::ReceivedFromRemoteRaylet);
+  std::shared_ptr<Buffer> data;
 
-  // then call new GetRemote() api. we'll need the owner address, the remote
-  // address (we can compute it based on pinned_at_off), the local address
-  // (should be provided when creating space for new object)
-  // store_client->GetRemote(object_id, owner_address, data, pinned_at_off)
+  RemoteConnectionInfo connection_info(client_id);
+  object_directory_->LookupRemoteConnectionInfo(connection_info);
+  if (!connection_info.Connected()) {
+    return false;
+  }
+
+  RAY_LOG(DEBUG) << "amaro. GetRemoteObjectRDMA() send pull request for " << object_id
+                 << " to owner_address " << owner_address.ip_address() << " pinned addr "
+                 << connection_info.ip << " pinned_at_off " << pinned_at_off
+                 << " object_size " << object_size;
+
+  // create space for object in plasma object store
+  Status s = buffer_pool_store_client_->CreateAndSpillIfNeeded(
+      object_id,
+      owner_address,
+      static_cast<int64_t>(object_size),
+      nullptr,
+      static_cast<int64_t>(6),
+      &data,
+      plasma::flatbuf::ObjectSource::ReceivedFromRemoteRaylet);
+
+  // then call new GetRemote() api.
+  plasma::ObjectBuffer object_buffer;
+  RAY_CHECK_OK(buffer_pool_store_client_->GetRemote(object_id,
+                                                    connection_info.ip,
+                                                    &object_buffer,
+                                                    pinned_at_off,
+                                                    /*is_from_worker=*/false));
 
   // then we need to do whatever pull manager does when the last chunk of an
   // object is received; i.e., ObjectBufferPool::WriteChunk()
@@ -343,10 +361,6 @@ bool ObjectManager::GetRemoteObjectRDMA(const ObjectID &object_id,
   // request of this object that we need to clear/invalidate?
   // and how do we "signal" (or to whom) that this object is ready to be used
   // locally?
-
-  RAY_LOG(DEBUG) << "amaro. GetRemoteObjectRDMA() send pull request for " << object_id
-                 << " to client ip " << owner_address.ip_address() << " pinned_at_off "
-                 << pinned_at_off << " object_size " << object_size;
 
   return false;
 }

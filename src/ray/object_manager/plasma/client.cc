@@ -139,11 +139,11 @@ class PlasmaClient::Impl : public std::enable_shared_from_this<PlasmaClient::Imp
              std::vector<ObjectBuffer> *object_buffers,
              bool is_from_worker);
 
-  Status Get(const ObjectID *object_ids,
-             int64_t num_objects,
-             int64_t timeout_ms,
-             ObjectBuffer *object_buffers,
-             bool is_from_worker);
+  Status GetRemote(const ObjectID &object_id,
+                   const std::string &ip_addr,
+                   ObjectBuffer *object_buffer,
+                   int64_t pinned_at_off,
+                   bool is_from_worker);
 
   Status Release(const ObjectID &object_id);
 
@@ -566,6 +566,67 @@ Status PlasmaClient::Impl::Get(const std::vector<ObjectID> &object_ids,
       &object_ids[0], num_objects, timeout_ms, wrap_buffer, &(*out)[0], is_from_worker);
 }
 
+Status PlasmaClient::Impl::GetRemote(const ObjectID &object_id,
+                                     const std::string &ip_address,
+                                     ObjectBuffer *object_buffer,
+                                     int64_t pinned_at_off,
+                                     bool is_from_worker) {
+  std::lock_guard<std::recursive_mutex> guard(client_mutex_);
+
+  const auto wrap_buffer = [=](const ObjectID &object_id,
+                               const std::shared_ptr<Buffer> &buffer) {
+    return std::make_shared<PlasmaBuffer>(shared_from_this(), object_id, buffer);
+  };
+
+  auto object_entry = objects_in_use_.find(object_id);
+  // TODO: support for when the object is found
+  RAY_CHECK(object_entry != objects_in_use_.end());
+  RAY_CHECK(!object_entry->second->is_sealed);
+
+  // send the GetRemote request to plasma
+  RAY_RETURN_NOT_OK(SendGetRemoteRequest(
+      store_conn_, ip_address, object_id, pinned_at_off, is_from_worker));
+
+  // receive reply and parse it
+  std::vector<uint8_t> reply_buf;
+  RAY_RETURN_NOT_OK(PlasmaReceive(store_conn_, MessageType::PlasmaGetReply, &reply_buf));
+  ObjectID recvd_object_id;
+  PlasmaObject recvd_object;
+  MEMFD_TYPE store_fd;
+  int64_t mmap_size;
+  RAY_RETURN_NOT_OK(ReadGetRemoteReply(reply_buf.data(),
+                                       reply_buf.size(),
+                                       recvd_object_id,
+                                       recvd_object,
+                                       store_fd,
+                                       mmap_size));
+
+  // mmap the fd if this is the first time we get it
+  GetStoreFdAndMmap(store_fd, mmap_size);
+  // we received the object we requested
+  RAY_CHECK(recvd_object_id == object_id);
+  // the object data is always retrieved
+  RAY_CHECK(recvd_object.data_size != -1);
+  RAY_CHECK(recvd_object.device_num == 0);
+
+  std::shared_ptr<Buffer> physical_buf;
+  uint8_t *data = LookupMmappedFile(store_fd);
+  physical_buf = std::make_shared<SharedMemoryBuffer>(
+      data + recvd_object.data_offset,
+      recvd_object.data_size + recvd_object.metadata_size);
+  // Finish filling out the return values.
+  physical_buf = wrap_buffer(object_id, physical_buf);
+  object_buffer->data =
+      SharedMemoryBuffer::Slice(physical_buf, 0, recvd_object.data_size);
+  object_buffer->metadata = SharedMemoryBuffer::Slice(
+      physical_buf, recvd_object.data_size, recvd_object.metadata_size);
+  object_buffer->device_num = recvd_object.device_num;
+  // Increment the count of the number of instances of this object that this
+  // client is using. Cache the reference to the object.
+  IncrementObjectCount(recvd_object_id, &recvd_object, true);
+  return Status::OK();
+}
+
 Status PlasmaClient::Impl::MarkObjectUnused(const ObjectID &object_id) {
   auto object_entry = objects_in_use_.find(object_id);
   RAY_CHECK(object_entry != objects_in_use_.end());
@@ -838,6 +899,15 @@ Status PlasmaClient::Get(const std::vector<ObjectID> &object_ids,
                          std::vector<ObjectBuffer> *object_buffers,
                          bool is_from_worker) {
   return impl_->Get(object_ids, timeout_ms, object_buffers, is_from_worker);
+}
+
+Status PlasmaClient::GetRemote(const ObjectID &object_id,
+                               const std::string &ip_addr,
+                               ObjectBuffer *object_buffer,
+                               int64_t pinned_at_off,
+                               bool is_from_worker) {
+  return impl_->GetRemote(
+      object_id, ip_addr, object_buffer, pinned_at_off, is_from_worker);
 }
 
 Status PlasmaClient::Release(const ObjectID &object_id) {

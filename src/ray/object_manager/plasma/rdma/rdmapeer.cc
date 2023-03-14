@@ -1,5 +1,6 @@
-#include "rdmapeer.h"
+#include "ray/object_manager/plasma/rdma/rdmapeer.h"
 
+namespace plasma {
 void RDMAPeer::create_pds_cqs(ibv_context *verbs) {
   ibv_cq_init_attr_ex cq_attrs_ex = {};
   cq_attrs_ex.cqe = QP_MAX_2SIDED_WRS;
@@ -18,7 +19,7 @@ void RDMAPeer::create_pds_cqs(ibv_context *verbs) {
   }
 
   pds_cqs_created = true;
-  printf("created pds and %u cqs\n", num_cqs);
+  RAY_LOG(DEBUG) << "created pds and " << num_cqs << " cqs";
 }
 
 void RDMAPeer::destroy_pds_cqs() {
@@ -64,10 +65,8 @@ void RDMAPeer::create_qps(RDMAContext &ctx) {
   ctx.cm_id->qp = ctx.qp;
   ctx.qpx = ibv_qp_to_qp_ex(ctx.qp);
 
-  printf("created qp=%p bound to send_cq=%p and recv_cq=%p\n",
-         static_cast<void *>(ctx.qp),
-         static_cast<void *>(send_cq),
-         static_cast<void *>(recv_cq));
+  RAY_LOG(DEBUG) << "created qp=" << ctx.qp << " bound to send_cq=" << send_cq
+                 << " and recv_cq=" << recv_cq;
   num_created_qps++;
 }
 
@@ -89,8 +88,9 @@ void RDMAPeer::connect_or_accept(RDMAContext &ctx, bool connect) {
 }
 
 void RDMAPeer::dereg_mrs() {
-  puts("dereg_mrs()");
+  RAY_LOG(DEBUG) << "dereg_mrs()";
   for (ibv_mr *curr_mr : registered_mrs) ibv_dereg_mr(curr_mr);
 
   registered_mrs.clear();
 }
+}  // namespace plasma

@@ -5,6 +5,11 @@
 #include <poll.h>
 #include <sys/socket.h>
 
+#include "ray/object_manager/plasma/rdma/rdmapeer.h"
+#include "ray/util/logging.h"
+
+namespace plasma {
+
 void PlasmaEndpoint::start_listen_thread(int port, EndpointManager *mgr) {
   stop_thread_ = false;
   listen_thread_.reset(
@@ -12,18 +17,18 @@ void PlasmaEndpoint::start_listen_thread(int port, EndpointManager *mgr) {
 }
 
 void PlasmaEndpoint::stop_unconnected_listen_thread() {
-  assert(!connected() && eptype_ == EpType::PASSIVE);
+  RAY_CHECK(!connected() && eptype_ == EpType::PASSIVE);
   stop_thread_ = true;
   listen_thread_->join();
 }
 
 void PlasmaEndpoint::wait_connected_listen_thread() {
-  assert(connected() && eptype_ == EpType::PASSIVE);
+  RAY_CHECK(connected() && eptype_ == EpType::PASSIVE);
   // we join here without force-stopping the thread so that we wait for
   // disconnect events
   listen_thread_->join();
   stop_thread_ = true;
-  assert(!connected() && eptype_ == EpType::INVALID);
+  RAY_CHECK(!connected() && eptype_ == EpType::INVALID);
 }
 
 void PlasmaEndpoint::active_connect(const std::string &ip, int port) {
@@ -32,7 +37,7 @@ void PlasmaEndpoint::active_connect(const std::string &ip, int port) {
   char port_str[256] = "";
 
   RDMAContext ctx(port);
-  snprintf(port_str, sizeof port_str, "%u", port);
+  snprintf(port_str, sizeof(port_str), "%u", port);
 
   RAY_CHECK(getaddrinfo(ip.c_str(), port_str, nullptr, &addr) == 0);
   RAY_CHECK((ctx.event_channel = rdma_create_event_channel()) != nullptr);
@@ -66,8 +71,9 @@ void PlasmaEndpoint::active_connect(const std::string &ip, int port) {
 }
 
 void PlasmaEndpoint::disconnect() {
-  assert(contexts[0].connected);
+  RAY_CHECK(contexts[0].connected);
 
+  RAY_LOG(DEBUG) << "disconnect()";
   dereg_mrs();
   contexts[0].disconnect();
   destroy_pds_cqs();
@@ -75,11 +81,11 @@ void PlasmaEndpoint::disconnect() {
 }
 
 std::string PlasmaEndpoint::get_peer_ip() const {
-  assert(contexts[0].connected);
+  RAY_CHECK(contexts[0].connected);
   char buf[INET_ADDRSTRLEN] = {};
 
   sockaddr *peer_addr = rdma_get_peer_addr(contexts[0].cm_id);
-  assert(peer_addr->sa_family == AF_INET);
+  RAY_CHECK(peer_addr->sa_family == AF_INET);
   sockaddr_in *peer_addr_in = reinterpret_cast<sockaddr_in *>(peer_addr);
   inet_ntop(AF_INET, &peer_addr_in->sin_addr, buf, INET_ADDRSTRLEN);
   return std::string(buf);
@@ -88,8 +94,9 @@ std::string PlasmaEndpoint::get_peer_ip() const {
 bool PlasmaEndpoint::connected() { return contexts.size() > 0 && contexts[0].connected; }
 
 void PlasmaEndpoint::handle_addr_resolved(RDMAContext &ctx, rdma_cm_id *cm_id) {
-  assert(!ctx.connected);
+  RAY_CHECK(!ctx.connected);
 
+  RAY_LOG(DEBUG) << "handle_addr_resolved()";
   if (!pds_cqs_created) create_pds_cqs(cm_id->verbs);
 
   ctx.cm_id = cm_id;
@@ -167,7 +174,7 @@ void PlasmaEndpoint::thread_connect_passive(unsigned int port, EndpointManager *
 }
 
 void PlasmaEndpoint::handle_conn_request(RDMAContext &ctx, rdma_cm_id *cm_id) {
-  assert(!ctx.connected);
+  RAY_CHECK(!ctx.connected);
   RAY_LOG(DEBUG) << "connect request";
 
   if (!pds_cqs_created) create_pds_cqs(cm_id->verbs);
@@ -179,8 +186,9 @@ void PlasmaEndpoint::handle_conn_request(RDMAContext &ctx, rdma_cm_id *cm_id) {
 }
 
 void PlasmaEndpoint::handle_conn_established(RDMAContext &ctx) {
-  assert(!ctx.connected);
+  RAY_CHECK(!ctx.connected);
   RAY_CHECK(contexts.size() == 0);
+  RAY_LOG(DEBUG) << "handle_conn_established()";
 
   ctx.connected = true;
   contexts.push_back(std::move(ctx));
@@ -189,7 +197,7 @@ void PlasmaEndpoint::handle_conn_established(RDMAContext &ctx) {
 }
 
 void PlasmaEndpoint::exchange_mrs() {
-  assert(contexts[0].connected);
+  RAY_CHECK(contexts[0].connected);
 
   // register the buffers
   register_onesided(local_mr_);
@@ -234,20 +242,24 @@ void PlasmaEndpoint::exchange_mrs() {
     RAY_CHECK(0);
   }
 
-  RAY_LOG(DEBUG) << "ep=" << this << " received peer's region raddr=" << peer_mr_.raddr()
-                 << " len=" << peer_mr_.length();
+  printf("ep=%p received peer's region raddr=%p len=%lu\n",
+         this,
+         peer_mr_.raddr(),
+         peer_mr_.length());
 }
 
 void PlasmaEndpoint::register_twosided(LocalMR &mr) {
   ibv_mr *rdma = register_mr(mr.laddr(), mr.length(), TWOSIDED_PERMISSIONS);
   RAY_CHECK(rdma);
   mr.set_registered(rdma);
+  printf("registered twosided region addr=%p len=%lu\n", mr.laddr(), mr.length());
 }
 
 void PlasmaEndpoint::register_onesided(LocalMR &mr) {
   ibv_mr *rdma = register_mr(mr.laddr(), mr.length(), ONESIDED_PERMISSIONS);
   RAY_CHECK(rdma);
   mr.set_registered(rdma);
+  printf("registered onesided region addr=%p len=%lu\n", mr.laddr(), mr.length());
 }
 
 void PlasmaEndpoint::post_send_ctrlreq_poll(const CtrlReq &req, uint32_t lkey) {
@@ -337,3 +349,4 @@ void EndpointManager::disconnect_active_eps() {
     }
   }
 }
+}  // namespace plasma

@@ -775,6 +775,21 @@ Status SendGetRequest(const std::shared_ptr<StoreConn> &store_conn,
   return PlasmaSend(store_conn, MessageType::PlasmaGetRequest, &fbb, message);
 }
 
+Status SendGetRemoteRequest(const std::shared_ptr<StoreConn> &store_conn,
+                            const std::string &ip_addr,
+                            const ObjectID &object_id,
+                            int64_t pinned_at_off,
+                            bool is_from_worker) {
+  flatbuffers::FlatBufferBuilder fbb;
+  auto message =
+      fb::CreatePlasmaGetRemoteRequest(fbb,
+                                       fbb.CreateString(ip_addr),
+                                       fbb.CreateString(object_id.Binary()),
+                                       pinned_at_off,
+                                       is_from_worker);
+  return PlasmaSend(store_conn, MessageType::PlasmaGetRemoteRequest, &fbb, message);
+}
+
 Status ReadGetRequest(uint8_t *data,
                       size_t size,
                       std::vector<ObjectID> &object_ids,
@@ -789,6 +804,23 @@ Status ReadGetRequest(uint8_t *data,
   }
   *timeout_ms = message->timeout_ms();
   *is_from_worker = message->is_from_worker();
+  return Status::OK();
+}
+
+Status ReadGetRemoteRequest(uint8_t *req_buf,
+                            size_t req_size,
+                            std::string *owner_ip_address,
+                            ObjectID *object_id,
+                            int64_t *pinned_at_off,
+                            bool *is_from_worker) {
+  RAY_DCHECK(req_buf);
+  auto message = flatbuffers::GetRoot<fb::PlasmaGetRemoteRequest>(req_buf);
+  RAY_CHECK(VerifyFlatbuffer(message, req_buf, req_size));
+  *owner_ip_address = message->owner_ip_address()->str();
+  *object_id = ObjectID::FromBinary(message->object_id()->str());
+  *pinned_at_off = message->pinned_at_off();
+  *is_from_worker = message->is_from_worker();
+
   return Status::OK();
 }
 
@@ -861,6 +893,30 @@ Status ReadGetReply(uint8_t *data,
         {INT2FD(message->store_fds()->Get(i)), message->unique_fd_ids()->Get(i)});
     mmap_sizes.push_back(message->mmap_sizes()->Get(i));
   }
+  return Status::OK();
+}
+
+Status ReadGetRemoteReply(uint8_t *reply_buf,
+                          size_t reply_buf_size,
+                          ObjectID &object_id,
+                          PlasmaObject &plasma_object,
+                          MEMFD_TYPE &store_fd,
+                          int64_t &mmap_size) {
+  RAY_DCHECK(reply_buf);
+  auto message = flatbuffers::GetRoot<fb::PlasmaGetRemoteReply>(reply_buf);
+  RAY_DCHECK(VerifyFlatbuffer(message, reply_buf, reply_buf_size));
+  object_id = ObjectID::FromBinary(message->object_id()->str());
+  const PlasmaObjectSpec *object = message->plasma_object();
+  plasma_object.store_fd.first = INT2FD(object->segment_index());
+  plasma_object.store_fd.second = object->unique_fd_id();
+  plasma_object.data_offset = object->data_offset();
+  plasma_object.data_size = object->data_size();
+  plasma_object.metadata_offset = object->metadata_offset();
+  plasma_object.metadata_size = object->metadata_size();
+  plasma_object.device_num = object->device_num();
+  store_fd = {INT2FD(message->store_fd()), message->unique_fd_id()};
+  mmap_size = message->mmap_size();
+
   return Status::OK();
 }
 

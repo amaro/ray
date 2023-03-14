@@ -167,6 +167,12 @@ class PlasmaStore {
                          int64_t timeout_ms,
                          bool is_from_worker) EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
+  void ProcessGetRemoteRequest(const std::shared_ptr<Client> &client,
+                               const std::string &owner_ip_address,
+                               const ObjectID &object_id,
+                               int64_t pinned_at_off,
+                               bool is_from_worker) EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+
   /// Process queued requests to create an object.
   void ProcessCreateRequests() EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
