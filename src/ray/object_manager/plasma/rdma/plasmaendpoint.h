@@ -11,9 +11,8 @@ namespace plasma {
 constexpr int NUM_LISTEN_PORTS = 4;
 constexpr int LISTEN_PORTS_START = 30000;
 constexpr int TWOSIDED_PERMISSIONS = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_RELAXED_ORDERING;
-constexpr int ONESIDED_PERMISSIONS = IBV_ACCESS_LOCAL_WRITE |
-                                     IBV_ACCESS_RELAXED_ORDERING |
-                                     IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_ATOMIC;
+constexpr int ONESIDED_PERMISSIONS = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE |
+                                     IBV_ACCESS_REMOTE_READ | IBV_ACCESS_RELAXED_ORDERING;
 
 class LocalMR {
  public:
@@ -25,21 +24,23 @@ class LocalMR {
   // LocalMR are supposed to be initialized, and then caller calls
   // set_registered() once it's been registered
   void set_registered(ibv_mr *rdma) {
-    assert(laddr_ && length_ && !registered_);
+    RAY_CHECK(laddr_ && length_ && !registered_);
+    RAY_CHECK(laddr_ == rdma->addr && length_ == rdma->length);
 
     rdma_ = rdma;
     registered_ = true;
   }
 
-  auto *laddr() const { return laddr_; }
+  void *laddr_ptr() const { return laddr_; }
+  uintptr_t laddr_uintptr() const { return reinterpret_cast<uintptr_t>(laddr_); }
   auto length() const { return length_; }
-  auto rkey() const {
-    assert(registered_);
-    return rdma_->rkey;
-  }
   auto lkey() const {
-    assert(registered_);
+    RAY_CHECK(registered_);
     return rdma_->lkey;
+  }
+  auto rkey() const {
+    RAY_CHECK(registered_);
+    return rdma_->rkey;
   }
   const ibv_mr *rdma() { return rdma_; }
 
@@ -54,10 +55,10 @@ class LocalMR {
 struct PeerMR {
  public:
   void set_rdma(const ibv_mr *rdma) { memcpy(&rdma_, rdma, sizeof(rdma_)); }
-  uint8_t *raddr() { return static_cast<uint8_t *>(rdma_.addr); }
-  auto length() const { return rdma_.length; }
-  auto rkey() const { return rdma_.rkey; }
+  uintptr_t raddr() { return reinterpret_cast<uintptr_t>(rdma_.addr); }
+  size_t length() const { return rdma_.length; }
   auto lkey() const { return rdma_.lkey; }
+  auto rkey() const { return rdma_.rkey; }
 
  private:
   // we own the ibv_mr but this is just a copy of the peer's
@@ -75,7 +76,7 @@ class PlasmaEndpoint : public RDMAPeer {
   // num_qps = 1, num_cqs = 1
   PlasmaEndpoint(EndpointManager *mgr, LocalMR unreg_local_mr)
       : RDMAPeer(1, 1),
-        local_mr_(unreg_local_mr.laddr(), unreg_local_mr.length()),
+        local_mr_(unreg_local_mr.laddr_ptr(), unreg_local_mr.length()),
         sendreq_mr_(&sendreq_, sizeof(sendreq_)),
         recvreq_mr_(&recvreq_, sizeof(recvreq_)) {}
 
@@ -86,6 +87,7 @@ class PlasmaEndpoint : public RDMAPeer {
   void disconnect();
   std::string get_peer_ip() const;
   bool connected();
+  bool read(uint64_t roffset, uint64_t loffset, size_t length);
   EpType eptype() const { return eptype_; }
 
  private:

@@ -93,6 +93,26 @@ std::string PlasmaEndpoint::get_peer_ip() const {
 
 bool PlasmaEndpoint::connected() { return contexts.size() > 0 && contexts[0].connected; }
 
+bool PlasmaEndpoint::read(uint64_t roffset, uint64_t loffset, size_t length) {
+  RAY_CHECK(connected());
+  RAY_CHECK(roffset > 0 && loffset > 0 && length > 0 && roffset < peer_mr_.length() &&
+            loffset < local_mr_.length());
+
+  RDMAContext &ctx = contexts[0];
+  ctx.post_single_onesided(
+      RDMAContext::OneSidedOp{.raddr = peer_mr_.raddr() + roffset,
+                              .laddr = local_mr_.laddr_uintptr() + loffset,
+                              .len = length,
+                              .rkey = peer_mr_.rkey(),
+                              .lkey = local_mr_.lkey(),
+                              .cmp = 0,
+                              .swp = 0,
+                              .optype = RDMAContext::OneSidedOp::OpType::READ});
+  poll_exactly(1, get_send_cq(0));
+  RAY_LOG(DEBUG) << "object read completed";
+  return true;
+}
+
 void PlasmaEndpoint::handle_addr_resolved(RDMAContext &ctx, rdma_cm_id *cm_id) {
   RAY_CHECK(!ctx.connected);
 
@@ -242,24 +262,33 @@ void PlasmaEndpoint::exchange_mrs() {
     RAY_CHECK(0);
   }
 
-  printf("ep=%p received peer's region raddr=%p len=%lu\n",
-         this,
-         peer_mr_.raddr(),
-         peer_mr_.length());
+  printf(
+      "RDMA connection established: ep=%p received peer's region raddr=%lx len=%lu "
+      "rkey=%u\n",
+      this,
+      peer_mr_.raddr(),
+      peer_mr_.length(),
+      peer_mr_.rkey());
 }
 
 void PlasmaEndpoint::register_twosided(LocalMR &mr) {
-  ibv_mr *rdma = register_mr(mr.laddr(), mr.length(), TWOSIDED_PERMISSIONS);
+  uint8_t *laddr = static_cast<uint8_t *>(mr.laddr_ptr());
+  ibv_mr *rdma = register_mr(laddr, mr.length(), TWOSIDED_PERMISSIONS);
   RAY_CHECK(rdma);
   mr.set_registered(rdma);
-  printf("registered twosided region addr=%p len=%lu\n", mr.laddr(), mr.length());
+  printf("registered twosided region addr=%p len=%lu\n", mr.laddr_ptr(), mr.length());
 }
 
 void PlasmaEndpoint::register_onesided(LocalMR &mr) {
-  ibv_mr *rdma = register_mr(mr.laddr(), mr.length(), ONESIDED_PERMISSIONS);
+  uint8_t *laddr = static_cast<uint8_t *>(mr.laddr_ptr());
+  ibv_mr *rdma = register_mr(laddr, mr.length(), ONESIDED_PERMISSIONS);
   RAY_CHECK(rdma);
   mr.set_registered(rdma);
-  printf("registered onesided region addr=%p len=%lu\n", mr.laddr(), mr.length());
+  printf("registered onesided region addr=%p len=%lu rkey=%u lkey=%u\n",
+         mr.laddr_ptr(),
+         mr.length(),
+         mr.rkey(),
+         mr.lkey());
 }
 
 void PlasmaEndpoint::post_send_ctrlreq_poll(const CtrlReq &req, uint32_t lkey) {

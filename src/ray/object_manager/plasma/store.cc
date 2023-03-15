@@ -264,8 +264,13 @@ void PlasmaStore::ProcessGetRequest(const std::shared_ptr<Client> &client,
 void PlasmaStore::ProcessGetRemoteRequest(const std::shared_ptr<Client> &client,
                                           const std::string &owner_ip_address,
                                           const ObjectID &object_id,
-                                          int64_t pinned_at_off,
+                                          int64_t roffset,
                                           bool is_from_worker) {
+  const LocalObject *lobject = object_lifecycle_mgr_.GetObject(object_id);
+  RAY_CHECK(!lobject->Sealed());
+  int64_t loffset = lobject->GetAllocation().offset;
+  auto size = lobject->GetAllocation().size;
+
   PlasmaEndpoint *ep = ep_mgr_.get_ep_to(owner_ip_address);
   if (!ep) {
     ep_mgr_.connect_to(owner_ip_address, 30000);
@@ -273,6 +278,8 @@ void PlasmaStore::ProcessGetRemoteRequest(const std::shared_ptr<Client> &client,
     RAY_CHECK(ep);
   }
 
+  // blocking read
+  ep->read(roffset, loffset, size);
   RAY_CHECK(0) << "amaro here";
 }
 
@@ -444,16 +451,16 @@ Status PlasmaStore::ProcessMessage(const std::shared_ptr<Client> &client,
   case fb::MessageType::PlasmaGetRemoteRequest: {
     std::string owner_ip_address;
     ObjectID object_id_to_get;
-    int64_t pinned_at_off;
+    int64_t pinned_at_roff;
     bool is_from_worker;
     RAY_RETURN_NOT_OK(ReadGetRemoteRequest(input,
                                            input_size,
                                            &owner_ip_address,
                                            &object_id_to_get,
-                                           &pinned_at_off,
+                                           &pinned_at_roff,
                                            &is_from_worker));
     ProcessGetRemoteRequest(
-        client, owner_ip_address, object_id_to_get, pinned_at_off, is_from_worker);
+        client, owner_ip_address, object_id_to_get, pinned_at_roff, is_from_worker);
   } break;
   case fb::MessageType::PlasmaReleaseRequest: {
     RAY_RETURN_NOT_OK(ReadReleaseRequest(input, input_size, &object_id));

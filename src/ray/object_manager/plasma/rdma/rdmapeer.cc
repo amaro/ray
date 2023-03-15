@@ -23,7 +23,7 @@ void RDMAPeer::create_pds_cqs(ibv_context *verbs) {
 }
 
 void RDMAPeer::destroy_pds_cqs() {
-  assert(pds_cqs_created);
+  RAY_CHECK(pds_cqs_created);
   pds_cqs_created = false;
 
   ibv_dealloc_pd(pd);
@@ -85,6 +85,16 @@ void RDMAPeer::connect_or_accept(RDMAContext &ctx, bool connect) {
     RAY_CHECK(rdma_connect(ctx.cm_id, &cm_params) == 0);
   else
     RAY_CHECK(rdma_accept(ctx.cm_id, &cm_params) == 0);
+}
+
+ibv_mr *RDMAPeer::register_mr(void *addr, size_t len, int permissions) {
+  RAY_CHECK(pd && addr && len && permissions);
+
+  ibv_mr *mr = ibv_reg_mr(pd, addr, len, permissions);
+  RAY_CHECK(mr) << "error registering mr";
+
+  registered_mrs.push_back(mr);
+  return mr;
 }
 
 void RDMAPeer::dereg_mrs() {

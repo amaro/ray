@@ -5,7 +5,6 @@
 #include <netdb.h>
 #include <rdma/rdma_cma.h>
 
-#include <cassert>
 #include <list>
 #include <memory>
 #include <queue>
@@ -40,7 +39,7 @@ struct CompQueue {
    * there was no completion available. any other return code ends the program.
    */
   int start_poll() {
-    assert(!poll_started);
+    RAY_CHECK(!poll_started);
     struct ibv_poll_cq_attr cq_attr = {};
 
     int ret = ibv_start_poll(cqx, &cq_attr);
@@ -111,8 +110,8 @@ class RDMAPeer {
         num_cqs(num_cqs),
         qps_per_thread(num_qps / num_cqs) {
     static_assert(MAX_UNSIGNALED_SENDS < QP_MAX_2SIDED_WRS);
-    assert(num_qps % num_cqs == 0);
-    assert(qps_per_thread > 0);
+    RAY_CHECK(num_qps % num_cqs == 0);
+    RAY_CHECK(qps_per_thread > 0);
   }
 
   virtual ~RDMAPeer() {
@@ -194,7 +193,7 @@ struct RDMAContext {
 
     uintptr_t raddr = 0;
     uintptr_t laddr = 0;
-    uint32_t len = 0;
+    size_t len = 0;
     uint32_t rkey = 0;
     uint32_t lkey = 0;
     uint64_t cmp = 0;
@@ -202,6 +201,9 @@ struct RDMAContext {
     OpType optype = OpType::INVALID;
 
     void post(ibv_qp_ex *qpx, unsigned int flags, uint64_t wr_id) {
+      RAY_LOG(DEBUG) << "RDMA op raddr=" << std::hex << raddr << " laddr=" << laddr
+                     << " len=" << std::dec << len << " rkey=" << rkey << " lkey=" << lkey
+                     << " cmp=" << cmp << " swp=" << swp;
       qpx->wr_flags = flags;
       qpx->wr_id = wr_id;
 
@@ -277,7 +279,7 @@ struct RDMAContext {
   }
 
   void disconnect() {
-    assert(connected);
+    RAY_CHECK(connected);
     connected = false;
 
     ibv_destroy_qp(qp);
@@ -320,7 +322,7 @@ struct RDMAContext {
 
     newbatch_ops++;
     buffered_onesided = op;
-    assert(newbatch_ops + outstanding_onesided <= QP_MAX_1SIDED_WRS);
+    RAY_CHECK(newbatch_ops + outstanding_onesided <= QP_MAX_1SIDED_WRS);
   }
 
   void end_batched_onesided() {
@@ -334,17 +336,17 @@ struct RDMAContext {
   }
 
   uint16_t free_onesided_slots() const {
-    assert(outstanding_onesided + newbatch_ops <= QP_MAX_1SIDED_WRS);
+    RAY_CHECK(outstanding_onesided + newbatch_ops <= QP_MAX_1SIDED_WRS);
     return QP_MAX_1SIDED_WRS - newbatch_ops - outstanding_onesided;
   }
 
   void complete_onesided(uint16_t comp) {
-    assert(outstanding_onesided >= comp);
+    RAY_CHECK(outstanding_onesided >= comp);
     outstanding_onesided -= comp;
   }
 
   void complete_send(uint16_t comp) {
-    assert(outstanding_sends >= comp);
+    RAY_CHECK(outstanding_sends >= comp);
     outstanding_sends -= comp;
   }
 
@@ -382,7 +384,7 @@ struct RDMAContext {
   }
 
   void start_batch() {
-    assert(newbatch_ops == 0);
+    RAY_CHECK(newbatch_ops == 0);
 
     ibv_wr_start(qpx);
   }
@@ -412,16 +414,6 @@ struct RDMAContext {
     RAY_CHECK(ibv_wr_complete(qpx) == 0);
   }
 };
-
-inline ibv_mr *RDMAPeer::register_mr(void *addr, size_t len, int permissions) {
-  assert(addr && len && permissions);
-
-  ibv_mr *mr = ibv_reg_mr(pd, addr, len, permissions);
-  if (!mr) RAY_LOG(ERROR) << "could not register mr";
-
-  registered_mrs.push_back(mr);
-  return mr;
-}
 
 inline void RDMAPeer::post_recv(const RDMAContext &ctx,
                                 const void *laddr,
@@ -516,12 +508,12 @@ inline ibv_cq_ex *RDMAPeer::get_recv_cq(uint16_t tid) {
 }
 
 inline CompQueue &RDMAPeer::get_send_compqueue(uint16_t tid) {
-  assert(tid <= num_cqs);
+  RAY_CHECK(tid <= num_cqs);
   return send_cqs[tid];
 }
 
 inline CompQueue &RDMAPeer::get_recv_compqueue(uint16_t tid) {
-  assert(tid <= num_cqs);
+  RAY_CHECK(tid <= num_cqs);
   return recv_cqs[tid];
 }
 
@@ -559,7 +551,7 @@ inline unsigned int RDMAPeer::poll_atmost(unsigned int max,
   unsigned int polled = 0;
   struct ibv_poll_cq_attr cq_attr = {};
 
-  assert(max > 0);
+  RAY_CHECK(max > 0);
 
   while ((ret = ibv_start_poll(cq, &cq_attr)) != 0) {
     if (ret == ENOENT)
@@ -590,7 +582,7 @@ inline unsigned int RDMAPeer::poll_atmost(unsigned int max,
 
 end_poll:
   ibv_end_poll(cq);
-  assert(polled <= max);
+  RAY_CHECK(polled <= max);
   return polled;
 }
 
@@ -601,7 +593,7 @@ inline unsigned int RDMAPeer::poll_batched_atmost(unsigned int max,
   int ret;
   unsigned int polled = 0;
 
-  assert(max > 0);
+  RAY_CHECK(max > 0);
 
   if (!comp_queue.poll_started) {
     ret = comp_queue.start_poll();
@@ -631,7 +623,7 @@ inline unsigned int RDMAPeer::poll_batched_atmost(unsigned int max,
 
 end_poll:
   comp_queue.maybe_end_poll(polled);
-  assert(polled <= max);
+  RAY_CHECK(polled <= max);
   return polled;
 }
 
@@ -657,7 +649,7 @@ inline void RDMAPeer::poll_exactly(unsigned int target, ibv_cq_ex *cq) {
       }
     }
 
-    RAY_CHECK(cq->status == IBV_WC_SUCCESS);
+    RAY_CHECK(cq->status == IBV_WC_SUCCESS) << "it is " << cq->status;
     polled++;
   } while (polled < target);
 
@@ -707,7 +699,7 @@ out:
 }
 
 inline void RDMAPeer::start_batched_ops(RDMAContext *ctx) {
-  assert(curr_batch_ctxs[current_tid] == nullptr);
+  RAY_CHECK(curr_batch_ctxs[current_tid] == nullptr);
 
   curr_batch_ctxs[current_tid] = ctx;
   ctx->start_batch();
@@ -715,7 +707,7 @@ inline void RDMAPeer::start_batched_ops(RDMAContext *ctx) {
 
 /* end batched ops (reads/writes/sends) */
 inline void RDMAPeer::end_batched_ops() {
-  assert(curr_batch_ctxs[current_tid] != nullptr);
+  RAY_CHECK(curr_batch_ctxs[current_tid] != nullptr);
 
   curr_batch_ctxs[current_tid]->end_batch();
   curr_batch_ctxs[current_tid] = nullptr;
