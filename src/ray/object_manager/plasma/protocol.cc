@@ -781,12 +781,11 @@ Status SendGetRemoteRequest(const std::shared_ptr<StoreConn> &store_conn,
                             int64_t pinned_at_off,
                             bool is_from_worker) {
   flatbuffers::FlatBufferBuilder fbb;
-  auto message =
-      fb::CreatePlasmaGetRemoteRequest(fbb,
-                                       fbb.CreateString(ip_addr),
-                                       fbb.CreateString(object_id.Binary()),
-                                       pinned_at_off,
-                                       is_from_worker);
+  auto message = fb::CreatePlasmaGetRemoteRequest(fbb,
+                                                  fbb.CreateString(ip_addr),
+                                                  fbb.CreateString(object_id.Binary()),
+                                                  pinned_at_off,
+                                                  is_from_worker);
   return PlasmaSend(store_conn, MessageType::PlasmaGetRemoteRequest, &fbb, message);
 }
 
@@ -805,6 +804,29 @@ Status ReadGetRequest(uint8_t *data,
   *timeout_ms = message->timeout_ms();
   *is_from_worker = message->is_from_worker();
   return Status::OK();
+}
+
+Status SendGetRemoteAndSealReply(const std::shared_ptr<Client> &client,
+                                 const ObjectID &object_id,
+                                 const PlasmaObject &object) {
+  flatbuffers::FlatBufferBuilder fbb;
+  fb::PlasmaGetRemoteReplyBuilder builder(fbb);
+
+  PlasmaObjectSpec plasma_object(FD2INT(object.store_fd.first),
+                                 object.store_fd.second,
+                                 object.data_offset,
+                                 object.data_size,
+                                 object.metadata_offset,
+                                 object.metadata_size,
+                                 object.device_num);
+
+  builder.add_object_id(fbb.CreateString(object_id.Binary()));
+  builder.add_plasma_object(&plasma_object);
+  builder.add_store_fd(FD2INT(object.store_fd.first));
+  builder.add_unique_fd_id(object.store_fd.second);
+  builder.add_mmap_size(object.mmap_size);
+  auto message = builder.Finish();
+  return PlasmaSend(client, MessageType::PlasmaGetRemoteReply, &fbb, message);
 }
 
 Status ReadGetRemoteRequest(uint8_t *req_buf,

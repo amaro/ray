@@ -583,13 +583,14 @@ Status PlasmaClient::Impl::GetRemote(const ObjectID &object_id,
   RAY_CHECK(object_entry != objects_in_use_.end());
   RAY_CHECK(!object_entry->second->is_sealed);
 
-  // send the GetRemote request to plasma
+  // send the GetRemoteAndSeal request to plasma
   RAY_RETURN_NOT_OK(SendGetRemoteRequest(
       store_conn_, ip_address, object_id, pinned_at_off, is_from_worker));
 
   // receive reply and parse it
   std::vector<uint8_t> reply_buf;
-  RAY_RETURN_NOT_OK(PlasmaReceive(store_conn_, MessageType::PlasmaGetReply, &reply_buf));
+  RAY_RETURN_NOT_OK(
+      PlasmaReceive(store_conn_, MessageType::PlasmaGetRemoteReply, &reply_buf));
   ObjectID recvd_object_id;
   PlasmaObject recvd_object;
   MEMFD_TYPE store_fd;
@@ -600,6 +601,9 @@ Status PlasmaClient::Impl::GetRemote(const ObjectID &object_id,
                                        recvd_object,
                                        store_fd,
                                        mmap_size));
+
+  // if everything went well, the object is sealed in plasma, so update our cache
+  object_entry->second->is_sealed = true;
 
   // mmap the fd if this is the first time we get it
   GetStoreFdAndMmap(store_fd, mmap_size);
@@ -621,9 +625,11 @@ Status PlasmaClient::Impl::GetRemote(const ObjectID &object_id,
   object_buffer->metadata = SharedMemoryBuffer::Slice(
       physical_buf, recvd_object.data_size, recvd_object.metadata_size);
   object_buffer->device_num = recvd_object.device_num;
-  // Increment the count of the number of instances of this object that this
-  // client is using. Cache the reference to the object.
-  IncrementObjectCount(recvd_object_id, &recvd_object, true);
+
+  // In theory, we should increment the object count when we Get() an object. However we
+  // also just Seal()ed the object. The Get() call should increment the object count, but
+  // the Seal() should decrement it. So we don't change the ref count and just leave it as
+  // is. 
   return Status::OK();
 }
 

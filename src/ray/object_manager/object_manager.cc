@@ -362,7 +362,7 @@ bool ObjectManager::GetRemoteObjectRDMA(const ObjectID &object_id,
   // and how do we "signal" (or to whom) that this object is ready to be used
   // locally?
 
-  return false;
+  return true;
 }
 
 void ObjectManager::HandlePushTaskTimeout(const ObjectID &object_id,

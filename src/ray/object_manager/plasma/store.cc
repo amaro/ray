@@ -266,11 +266,13 @@ void PlasmaStore::ProcessGetRemoteRequest(const std::shared_ptr<Client> &client,
                                           const ObjectID &object_id,
                                           int64_t roffset,
                                           bool is_from_worker) {
+  // get the object information; this must exist since we assume Create() was called
+  // before this
   const LocalObject *lobject = object_lifecycle_mgr_.GetObject(object_id);
-  RAY_CHECK(!lobject->Sealed());
-  int64_t loffset = lobject->GetAllocation().offset;
-  auto size = lobject->GetAllocation().size;
+  RAY_CHECK(lobject && !lobject->Sealed());
+  auto &object_alloc = lobject->GetAllocation();
 
+  // get the plasma endpoint
   PlasmaEndpoint *ep = ep_mgr_.get_ep_to(owner_ip_address);
   if (!ep) {
     ep_mgr_.connect_to(owner_ip_address, 30000);
@@ -278,9 +280,19 @@ void PlasmaStore::ProcessGetRemoteRequest(const std::shared_ptr<Client> &client,
     RAY_CHECK(ep);
   }
 
-  // blocking read
-  ep->read(roffset, loffset, size);
-  RAY_CHECK(0) << "amaro here";
+  // issue a blocking read
+  ep->read(roffset, object_alloc.offset, object_alloc.size);
+
+  // seal object
+  SealObjects({object_id});
+
+  // issue a reply to the client
+  PlasmaObject result = {};
+  lobject->ToPlasmaObject(&result, /*check_sealed*/ true);
+  if (SendGetRemoteAndSealReply(client, object_id, result).ok()) {
+    // if we successfuly sent the reply, and we haven't sent this store_fd, send it
+    client->SendFd(result.store_fd);
+  }
 }
 
 int PlasmaStore::RemoveFromClientObjectIds(const ObjectID &object_id,

@@ -44,8 +44,9 @@ enum MessageType:long {
   PlasmaSealReply,
   // Get an object that is stored on the local Plasma store.
   PlasmaGetRequest,
-  PlasmaGetRemoteRequest,
   PlasmaGetReply,
+  PlasmaGetRemoteRequest,
+  PlasmaGetRemoteReply,
   // Release an object.
   PlasmaReleaseRequest,
   PlasmaReleaseReply,

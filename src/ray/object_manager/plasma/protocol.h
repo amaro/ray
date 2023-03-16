@@ -154,6 +154,10 @@ Status ReadGetRequest(uint8_t *data,
                       int64_t *timeout_ms,
                       bool *is_from_worker);
 
+Status SendGetRemoteAndSealReply(const std::shared_ptr<Client> &client,
+                                 const ObjectID &object_id,
+                                 const PlasmaObject &object);
+
 Status ReadGetRemoteRequest(uint8_t *req_buf,
                             size_t req_size,
                             std::string *owner_ip_address,
